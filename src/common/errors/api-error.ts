@@ -1,0 +1,92 @@
+import { HttpException, HttpStatus } from '@nestjs/common';
+
+/**
+ * The `code` half of the error envelope, as a closed set.
+ *
+ * `AllExceptionsFilter` reads the `error` field off an HttpException's response
+ * body and slugs it into `error.code`, so throwing through the helpers below is
+ * the only way a route produces one of these. A free-form string would let the
+ * same condition ship under two names, and the app and the HO portal branch on
+ * this value for what they **show**.
+ *
+ * Retry-or-fail is **not** decided here: it is the HTTP status. A 4xx (except
+ * 401, 408, 429) is final for the caller; a 5xx or no answer may be retried.
+ *
+ * Add a code here, in the module's section, when a feature needs one.
+ */
+export const API_ERROR_CODES = ['VALIDATION_FAILED', 'NOT_FOUND'] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+/**
+ * The codes that reach the wire **without** going through `apiError()` —
+ * Nest's own exceptions, Fastify's body parser, the throttler, and the
+ * database errors `AllExceptionsFilter` translates. Listed so the set the
+ * clients are told about is actually closed.
+ *
+ * Not accepted by `apiError()` on purpose — a route that means one of these
+ * throws the framework's exception, and a condition of its own gets a code of
+ * its own above.
+ */
+export const FRAMEWORK_ERROR_CODES = [
+  // Nest's HTTP exceptions, slugged from their `error` or their status.
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'SERVICE_UNAVAILABLE',
+  'INTERNAL_SERVER_ERROR',
+  // The throttler.
+  'TOO_MANY_REQUESTS',
+  // Fastify, before any pipe runs: a body over the limit, or not JSON at all.
+  'PAYLOAD_TOO_LARGE',
+  'UNSUPPORTED_MEDIA_TYPE',
+  // `AllExceptionsFilter`'s translations of what Mongo threw.
+  'DUPLICATE_KEY',
+  'INVALID_ID',
+  'SCHEMA_VALIDATION_FAILED',
+  'DATABASE_UNAVAILABLE',
+  'INTERNAL_ERROR',
+] as const;
+
+export type FrameworkErrorCode = (typeof FRAMEWORK_ERROR_CODES)[number];
+
+/** Every `error.code` a response can carry. */
+export const WIRE_ERROR_CODES: readonly (ApiErrorCode | FrameworkErrorCode)[] =
+  [...API_ERROR_CODES, ...FRAMEWORK_ERROR_CODES];
+
+/**
+ * `details` is an array of plain sentences, not an object — the app shows
+ * `details[0]` verbatim, so the first line has to make sense on a phone screen
+ * without a developer to read it.
+ */
+export function apiError(
+  status: HttpStatus,
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException {
+  return new HttpException(
+    { error: code, message, ...(details ? { details } : {}) },
+    status,
+  );
+}
+
+export const badRequest = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException => apiError(HttpStatus.BAD_REQUEST, code, message, details);
+
+export const forbidden = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException => apiError(HttpStatus.FORBIDDEN, code, message, details);
+
+export const notFound = (message: string, details?: string[]): HttpException =>
+  apiError(HttpStatus.NOT_FOUND, 'NOT_FOUND', message, details);
+
+export const conflict = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException => apiError(HttpStatus.CONFLICT, code, message, details);

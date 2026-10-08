@@ -1,0 +1,59 @@
+# Secrets — never commit. The MONGODB_URI in .env points at production data, and
+# `.env.*` is deliberately broader than the files that exist today: a `.env.local`
+# or a `.env.bak` made mid-debug is the same secret with a different name.
+.env
+.env.*
+!.env.example
+
+# Keys and certificates. None are checked in today; the patterns are here so the
+# first one added does not have to be noticed by a reviewer.
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# Build
+/dist
+/build
+*.tsbuildinfo
+
+# Deps
+/node_modules
+/.pnpm-store
+
+# Test + tool caches
+/coverage
+/.nyc_output
+/.jest-cache
+.eslintcache
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# Debug captures. Pasted request/response dumps belong in a scratch directory,
+# not in the tree — they read as fixtures a year later.
+example.json
+*.dump.json
+
+# Local-only overrides
+docker-compose.override.yml
+*.local
+.claude/settings.local.json
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# Merge artefacts
+*.orig
+*.rej

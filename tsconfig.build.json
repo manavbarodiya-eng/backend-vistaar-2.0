@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    /* Keep the incremental cache inside the output it describes, so
+       `rm -rf dist` is a real clean. Left at its default it sits next to this
+       file, survives the delete, and the next build reports success while
+       emitting nothing at all — an empty dist/ that deploys as a working
+       build right up until it is started. */
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+}

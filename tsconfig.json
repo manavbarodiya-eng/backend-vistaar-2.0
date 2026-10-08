@@ -1,0 +1,65 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    /* `rootDir` fixes what the emitted tree looks like: src/main.ts becomes
+       dist/main.js, so `node dist/main` stays the production entrypoint.
+       Left unset, TypeScript infers it from whatever files are included — add
+       one .ts file outside src/ and the whole output silently shifts down a
+       level to dist/src/, breaking that command. TypeScript 7 wants it stated
+       rather than inferred, and it is the kind of thing worth stating anyway. */
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+
+    /* Import by role, not by how deep the file happens to sit. A file that
+       moves keeps its import; `../../../` never appears.
+
+       Aliases cross unit boundaries only — inside one module, keep relative
+       `./` imports so a module still reads as self-contained.
+
+       Nothing is needed at runtime: `nest build` resolves these into real
+       relative requires, so dist/ is plain Node-resolvable JS. Two other
+       places do need to agree, and drift silently if they don't:
+         • jest.moduleNameMapper in package.json
+         • the import-boundary rules in eslint.config.mjs
+
+       Paths are relative to this file. No `baseUrl` — it has not been needed
+       alongside `paths` since TypeScript 4.1, and it is deprecated for
+       removal in 7.0.                                                  */
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@common/*": ["./src/common/*"],
+      "@config/*": ["./src/config/*"],
+      "@database/*": ["./src/database/*"],
+      "@modules/*": ["./src/modules/*"]
+    },
+
+    /* Strictness — the whole point of moving off the old JS backend.
+       A query like `find({ email })` against a schema whose field is
+       `agent_email` must fail at compile time, not silently return []. */
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  /* Only src/, because `rootDir` is src/ — a file outside it is a compile
+     error, not a silent layout change. e2e specs under test/ are compiled by
+     ts-jest via test/jest-e2e.json; when the first one is written it will
+     want its own tsconfig extending this file with `rootDir: "./"`. */
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

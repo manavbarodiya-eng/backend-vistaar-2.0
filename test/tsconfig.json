@@ -1,0 +1,14 @@
+{
+  /* The e2e specs live outside `src/`, which the root config is pinned to
+     (`rootDir: "src"`). This is the file the root config's comment asks for:
+     the same strictness and the same path aliases, rooted one level up so
+     `test/*.e2e-spec.ts` and the `src/` files it imports are one project.
+     ts-jest compiles them through `test/jest-e2e.json`; this exists so the
+     type-checked lint rules can see them too. */
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../",
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "../src/**/*.ts"]
+}
