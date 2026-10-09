@@ -53,7 +53,7 @@ export const DEFAULT_COHORTS: DefaultCohort[] = [
         key: 'shop_name',
         type: 'text',
         label: l('Shop name', 'दुकान का नाम'),
-        required: true,
+        required: false,
         maps_to: 'details.shop_name',
         validation: { min_length: 2, max_length: 120 },
       },
@@ -318,7 +318,7 @@ export function defaultSteps(cohort: DefaultCohort): StepDef[] {
           key: 'gps',
           type: 'location',
           label: l('Current location (GPS)'),
-          required: true,
+          required: false,
           maps_to: 'location',
         },
         {
