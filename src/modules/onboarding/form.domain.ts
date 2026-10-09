@@ -213,6 +213,8 @@ function fieldErrors(field: FieldDef, at: string, nested: boolean): string[] {
     errors.push(`${at}.maps_to "${String(field.maps_to)}" is not allowed`);
   if (field.maps_to === 'location' && field.type !== 'location')
     errors.push(`${at}: only a location field maps to location`);
+  if (field.type === 'location' && field.required)
+    errors.push(`${at}: a location (GPS) field cannot be required`);
   if (field.org_document !== undefined) {
     if (field.type !== 'document')
       errors.push(`${at}: only a document field has an org_document`);
@@ -462,6 +464,22 @@ export const isEmpty = (value: unknown): boolean =>
 
 // ── Reading a form back ────────────────────────────────────────────────────
 
+/**
+ * Whether [field] must be filled. Location (GPS) is never required, for any
+ * partner: a form saved earlier with a required GPS field does not block.
+ */
+export const isRequired = (field: FieldDef): boolean =>
+  field.required && field.type !== 'location';
+
+/** [steps] as the app sees them: every location field optional. */
+export const withOptionalLocation = (steps: StepDef[]): StepDef[] =>
+  steps.map((s) => ({
+    ...s,
+    fields: s.fields.map((f) =>
+      f.type === 'location' ? { ...f, required: false } : f,
+    ),
+  }));
+
 /** Active steps in order, each with its top-level fields. */
 export const activeSteps = (steps: StepDef[]): StepDef[] =>
   steps.filter((s) => s.is_active).sort((a, b) => a.order - b.order);
@@ -492,7 +510,7 @@ export function isVisible(field: FieldDef, raw: RawData): boolean {
 export function missingRequired(steps: StepDef[], raw: RawData): string[] {
   return activeSteps(steps)
     .flatMap((s) => s.fields)
-    .filter((f) => f.required && isVisible(f, raw) && isEmpty(raw[f.key]))
+    .filter((f) => isRequired(f) && isVisible(f, raw) && isEmpty(raw[f.key]))
     .map((f) => f.key);
 }
 
@@ -503,12 +521,12 @@ export function progress(
   const active = activeSteps(steps);
   const required = active
     .flatMap((s) => s.fields)
-    .filter((f) => f.required && isVisible(f, raw));
+    .filter((f) => isRequired(f) && isVisible(f, raw));
   const filled = required.filter((f) => !isEmpty(raw[f.key])).length;
   const completed_steps = active
     .filter((s) =>
       s.fields.every(
-        (f) => !f.required || !isVisible(f, raw) || !isEmpty(raw[f.key]),
+        (f) => !isRequired(f) || !isVisible(f, raw) || !isEmpty(raw[f.key]),
       ),
     )
     .map((s) => s.step_id);

@@ -69,7 +69,7 @@ async function main(): Promise<void> {
           cohort.key,
           steps,
           stale
-            ? 'Defaults updated: 12-digit Aadhaar, KYC copied to org documents'
+            ? 'Defaults updated: GPS optional, no shop step for Vistaar Agent'
             : 'Initial form from the Vistaar 2.0 PRD',
           BY,
         );
