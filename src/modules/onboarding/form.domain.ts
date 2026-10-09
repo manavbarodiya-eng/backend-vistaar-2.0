@@ -178,15 +178,6 @@ export function configErrors(steps: StepDef[]): string[] {
       );
     }
   }
-
-  const activeFields = steps
-    .filter((s) => s.is_active)
-    .flatMap((s) => s.fields ?? []);
-  if (!activeFields.some((f) => f.type === 'location' && f.required)) {
-    errors.push(
-      'The form must have a required `location` field (GPS is mandatory for Vistaar partners).',
-    );
-  }
   return errors;
 }
 
