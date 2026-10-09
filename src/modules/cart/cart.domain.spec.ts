@@ -19,6 +19,9 @@ function variant(overrides: Partial<CatalogVariant> = {}): CatalogVariant {
     product_name: '2IN1',
     product_image: null,
     size_label: '1 L',
+    packaging_size: '1',
+    uom: 'l',
+    moq: 1,
     price: 1895,
     mrp: 3829,
     gst: 18,
@@ -26,6 +29,30 @@ function variant(overrides: Partial<CatalogVariant> = {}): CatalogVariant {
     ...overrides,
   };
 }
+
+describe('lineFrom', () => {
+  it("fills a line the way B2B's own cart rows are filled", () => {
+    expect(lineFrom(variant({ packaging_size: '0.92', uom: 'kg' }), 2)).toEqual(
+      {
+        product_id: 'BK-629',
+        sku: 'K-350',
+        product_name: '2IN1',
+        price: 1895,
+        quantity: 2,
+        total: 3790,
+        gst: 18,
+        moq: 1,
+        packaging_size: '0.92',
+        packaging_type: '',
+        uom: 'kg',
+        requested_weight: 0,
+        item_type: 'bulk',
+        packaging_sku: null,
+        is_custom_packaging: false,
+      },
+    );
+  });
+});
 
 describe('addItem', () => {
   it('adds a new line priced from the catalogue', () => {
@@ -115,26 +142,6 @@ describe('removeItem', () => {
   });
 });
 
-describe('restoreLines', () => {
-  it('re-prices, re-caps and drops packs no longer sold', () => {
-    const catalog = new Map([
-      ['K-350', variant({ price: 2000, available_qty: 3 })],
-    ]);
-
-    const lines = restoreLines(
-      [
-        { sku: 'K-350', quantity: 5 },
-        { sku: 'K-gone', quantity: 1 },
-      ],
-      catalog,
-    );
-
-    expect(lines).toEqual([
-      lineFrom(variant({ price: 2000, available_qty: 3 }), 3),
-    ]);
-  });
-});
-
 describe('priceLines', () => {
   it("prices at today's catalogue and flags what moved", () => {
     const stored = [
@@ -157,6 +164,11 @@ describe('priceLines', () => {
       ['K-gone', 1895, false, false],
     ]);
     expect(priced[0].total).toBe(3800);
+    expect(priced.map((l) => [l.mrp, l.size_label])).toEqual([
+      [3829, '1 L'],
+      [3829, '1 L'],
+      [0, '1 l'],
+    ]);
   });
 });
 
@@ -168,5 +180,26 @@ describe('totalsOf', () => {
     ];
 
     expect(totalsOf(lines)).toEqual({ item_count: 2, subtotal: 0.3 });
+  });
+});
+
+describe('restoreLines', () => {
+  it("re-prices at today's catalogue, caps at stock, drops what is gone", () => {
+    const catalog = new Map([
+      ['K-350', variant({ price: 2000, available_qty: 5 })],
+      ['K-0', variant({ sku: 'K-0', available_qty: 0 })],
+    ]);
+
+    const lines = restoreLines(
+      [
+        { sku: 'K-350', quantity: 8 },
+        { sku: 'K-0', quantity: 1 },
+        { sku: 'K-GONE', quantity: 1 },
+      ],
+      catalog,
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ sku: 'K-350', price: 2000, quantity: 5 });
   });
 });

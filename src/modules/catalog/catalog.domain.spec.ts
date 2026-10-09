@@ -29,6 +29,9 @@ describe('variantsFromMarketplaceItem', () => {
       product_name: '2IN1',
       product_image: 'https://img/product.webp',
       size_label: '1 L',
+      packaging_size: '1',
+      uom: 'l',
+      moq: 1,
       price: 1895,
       mrp: 3829,
       gst: 18,
@@ -49,6 +52,17 @@ describe('variantsFromMarketplaceItem', () => {
       '1 L × 5',
       '1 L × 5 (K-2)',
     ]);
+  });
+
+  it('stores the pack weight the way B2B carts do: grams to kg', () => {
+    const [v] = variantsFromMarketplaceItem({
+      bulk_sku: 'BK-1',
+      variants: [
+        pack({ variant: { value: '460', uom: 'gm' }, item_qty: '2', moq: 3 }),
+      ],
+    });
+
+    expect(v).toMatchObject({ packaging_size: '0.92', uom: 'kg', moq: 3 });
   });
 
   it('drops unpriced packs and survives a malformed payload', () => {

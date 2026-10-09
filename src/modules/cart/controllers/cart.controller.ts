@@ -9,11 +9,9 @@ import {
   Patch,
   Post,
   Put,
-  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiExtraModels,
   ApiOkResponse,
   ApiOperation,
   ApiSecurity,
@@ -22,17 +20,14 @@ import {
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
 import { CurrentPartner } from '@common/auth/current-partner.decorator';
-import { PageResult } from '@common/http/page-result';
 
 import {
   AddCartItemDto,
-  SavedCartParamDto,
-  SavedCartsQueryDto,
   SetCartCustomerDto,
   SkuParamDto,
   UpdateCartItemDto,
 } from '../dto/cart-request.dto';
-import { CartView, SavedCartView } from '../dto/cart-view.dto';
+import { CartView } from '../dto/cart-view.dto';
 import { CartService } from '../services/cart.service';
 
 /**
@@ -43,7 +38,6 @@ import { CartService } from '../services/cart.service';
 @ApiTags('cart')
 @ApiBearerAuth()
 @ApiSecurity('partner-header')
-@ApiExtraModels(PageResult, SavedCartView)
 @Controller('cart')
 export class CartController {
   constructor(private readonly cart: CartService) {}
@@ -98,7 +92,9 @@ export class CartController {
   }
 
   @Put('customer')
-  @ApiOperation({ summary: 'Who the cart is for (null = own shop stock)' })
+  @ApiOperation({
+    summary: "Who the cart is for: a customer's pii_id, or null for own stock",
+  })
   @ApiOkResponse({ type: CartView })
   setCustomer(
     @CurrentPartner() partnerId: string,
@@ -116,60 +112,5 @@ export class CartController {
     @B2bToken() token: string,
   ): Promise<CartView> {
     return this.cart.clear(partnerId, token);
-  }
-
-  // ── Saved carts ───────────────────────────────────────────────────────
-
-  @Post('saved')
-  @ApiOperation({
-    summary: 'Save the active cart for later (one per customer)',
-  })
-  @ApiOkResponse({ type: SavedCartView })
-  save(
-    @CurrentPartner() partnerId: string,
-    @B2bToken() token: string,
-  ): Promise<SavedCartView> {
-    return this.cart.save(partnerId, token);
-  }
-
-  @Get('saved')
-  @ApiOperation({ summary: 'Saved carts, newest first' })
-  listSaved(
-    @CurrentPartner() partnerId: string,
-    @Query() query: SavedCartsQueryDto,
-  ): Promise<PageResult<SavedCartView>> {
-    return this.cart.listSaved(partnerId, query);
-  }
-
-  @Post('saved/:id/restore')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Replace the active cart with a saved one' })
-  @ApiOkResponse({ type: CartView })
-  restore(
-    @CurrentPartner() partnerId: string,
-    @B2bToken() token: string,
-    @Param() { id }: SavedCartParamDto,
-  ): Promise<CartView> {
-    return this.cart.restore(partnerId, token, id);
-  }
-
-  @Post('saved/:id/reminder')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Record that a WhatsApp reminder was sent' })
-  @ApiOkResponse({ type: SavedCartView })
-  markReminderSent(
-    @CurrentPartner() partnerId: string,
-    @Param() { id }: SavedCartParamDto,
-  ): Promise<SavedCartView> {
-    return this.cart.markReminderSent(partnerId, id);
-  }
-
-  @Delete('saved/:id')
-  @ApiOperation({ summary: 'Delete a saved cart' })
-  deleteSaved(
-    @CurrentPartner() partnerId: string,
-    @Param() { id }: SavedCartParamDto,
-  ): Promise<{ deleted: true }> {
-    return this.cart.deleteSaved(partnerId, id);
   }
 }

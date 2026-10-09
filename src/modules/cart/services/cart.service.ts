@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 import { conflict, notFound } from '@common/errors/api-error';
-import { PageResult } from '@common/http/page-result';
 import { KeyedSerialQueue } from '@common/utils/keyed-serial-queue';
 import type { CatalogVariant } from '@modules/catalog/catalog.domain';
 import { CatalogService } from '@modules/catalog/services/catalog.service';
@@ -19,10 +18,9 @@ import {
 } from '../cart.domain';
 import type {
   AddCartItemDto,
-  SavedCartsQueryDto,
   SetCartCustomerDto,
 } from '../dto/cart-request.dto';
-import type { CartView, SavedCartView } from '../dto/cart-view.dto';
+import type { CartView } from '../dto/cart-view.dto';
 import {
   CartRepository,
   type CartWrite,
@@ -54,8 +52,6 @@ export class CartService {
     private readonly catalog: CatalogService,
   ) {}
 
-  // ── Active cart ───────────────────────────────────────────────────────
-
   async get(partnerId: string, token: string): Promise<CartView> {
     return this.view(await this.carts.findActive(partnerId), token);
   }
@@ -70,7 +66,7 @@ export class CartService {
     return this.mutate(partnerId, token, (current) =>
       writeOf(
         applied(addItem(current?.items ?? [], variant, dto.quantity)),
-        current,
+        current?.pii_id,
       ),
     );
   }
@@ -87,14 +83,14 @@ export class CartService {
     return this.mutate(partnerId, token, (current) =>
       writeOf(
         applied(setQuantity(current?.items ?? [], sku, quantity, variant)),
-        current,
+        current?.pii_id,
       ),
     );
   }
 
   removeItem(partnerId: string, token: string, sku: string): Promise<CartView> {
     return this.mutate(partnerId, token, (current) =>
-      writeOf(applied(removeItem(current?.items ?? [], sku)), current),
+      writeOf(applied(removeItem(current?.items ?? [], sku)), current?.pii_id),
     );
   }
 
@@ -104,11 +100,7 @@ export class CartService {
     dto: SetCartCustomerDto,
   ): Promise<CartView> {
     return this.mutate(partnerId, token, (current) =>
-      writeOf(current?.items ?? [], {
-        customer_id: dto.customer_id,
-        customer_name:
-          dto.customer_id === null ? null : (dto.customer_name ?? null),
-      }),
+      writeOf(current?.items ?? [], dto.pii_id),
     );
   }
 
@@ -117,81 +109,24 @@ export class CartService {
     return this.mutate(partnerId, token, () => writeOf([], null));
   }
 
-  // ── Saved carts ───────────────────────────────────────────────────────
-
   /**
-   * Cart.tsx `saveForLater`: a copy of the active cart, one per customer. The
-   * active cart is left as it is, as on the phone.
+   * The cart becomes these lines, for this customer — a draft order being
+   * resumed. Re-priced and re-capped at today's stock; what is no longer
+   * sold is left out.
    */
-  async save(partnerId: string, token: string): Promise<SavedCartView> {
-    const current = await this.carts.findActive(partnerId);
-
-    if (!current || current.items.length === 0) {
-      throw conflict('CART_EMPTY', 'Add a product before saving the cart.');
-    }
-
-    // Saved at today's prices: the saved list shows what the order is worth now.
-    const catalog = await this.catalog.variants(
-      current.items.map((l) => l.sku),
-      token,
-    );
-    const lines = priceLines(current.items, catalog).map(stripView);
-
-    const saved = await this.carts.upsertSaved(
-      partnerId,
-      current.customer_id ?? 'self',
-      writeOf(lines, current),
-    );
-
-    return savedView(saved);
-  }
-
-  async listSaved(
-    partnerId: string,
-    query: SavedCartsQueryDto,
-  ): Promise<PageResult<SavedCartView>> {
-    const [rows, total] = await this.carts.listSaved(
-      partnerId,
-      query.skip,
-      query.limit,
-    );
-    return new PageResult(rows.map(savedView), total, query);
-  }
-
-  /**
-   * SavedCarts `_resume`: the saved lines replace the active cart, re-capped
-   * at today's stock. The saved cart stays, as on the phone.
-   */
-  async restore(
+  async replace(
     partnerId: string,
     token: string,
-    id: string,
+    lines: readonly { sku: string; quantity: number }[],
+    piiId: string | null,
   ): Promise<CartView> {
-    const saved = await this.carts.findSaved(partnerId, id);
-    if (!saved) throw notFound('This saved cart no longer exists.');
-
     const catalog = await this.catalog.variants(
-      saved.items.map((l) => l.sku),
+      lines.map((l) => l.sku),
       token,
     );
-    const lines = restoreLines(saved.items, catalog);
+    const restored = restoreLines(lines, catalog);
 
-    return this.mutate(partnerId, token, () => writeOf(lines, saved));
-  }
-
-  async markReminderSent(
-    partnerId: string,
-    id: string,
-  ): Promise<SavedCartView> {
-    const saved = await this.carts.markReminderSent(partnerId, id);
-    if (!saved) throw notFound('This saved cart no longer exists.');
-    return savedView(saved);
-  }
-
-  async deleteSaved(partnerId: string, id: string): Promise<{ deleted: true }> {
-    const deleted = await this.carts.deleteSaved(partnerId, id);
-    if (!deleted) throw notFound('This saved cart no longer exists.');
-    return { deleted: true };
+    return this.mutate(partnerId, token, () => writeOf(restored, piiId));
   }
 
   // ── Internals ─────────────────────────────────────────────────────────
@@ -199,7 +134,7 @@ export class CartService {
   /**
    * Read → change → write-if-unchanged. Queued per partner on this instance
    * (quick taps on one phone would otherwise lose writes to each other —
-   * 6 of 20 in the beta smoke test), and guarded by the document's `version`
+   * 6 of 20 in the beta smoke test), and guarded by the document's `__v`
    * across instances. No database locks or transactions: each write touches
    * one document, so carts scale with the partner count.
    */
@@ -225,7 +160,7 @@ export class CartService {
       const next = change(current);
 
       const written = current
-        ? await this.carts.updateActive(partnerId, current.version, next)
+        ? await this.carts.updateActive(partnerId, current.__v, next)
         : await this.carts.insertActive(partnerId, next);
 
       if (written) {
@@ -248,15 +183,16 @@ export class CartService {
 
   private async view(
     cart:
-      | (Pick<CartRecord, 'items' | 'customer_id' | 'customer_name'> &
-          Partial<Pick<CartRecord, 'updated_at'>>)
+      | (Pick<CartRecord, 'items'> & {
+          pii_id?: string | null;
+          updated_at?: Date;
+        })
       | null,
     token: string,
   ): Promise<CartView> {
     if (!cart || cart.items.length === 0) {
       return {
-        customer_id: cart?.customer_id ?? null,
-        customer_name: cart?.customer_name ?? null,
+        pii_id: cart?.pii_id ?? null,
         items: [],
         item_count: 0,
         subtotal: 0,
@@ -273,14 +209,13 @@ export class CartService {
     const totals = totalsOf(priced);
 
     return {
-      customer_id: cart.customer_id,
-      customer_name: cart.customer_name,
+      pii_id: cart.pii_id ?? null,
       items: priced.map((l) => ({
         sku: l.sku,
         product_id: l.product_id,
         product_name: l.product_name,
-        product_image: l.product_image,
-        size_label: l.packaging_size,
+        product_image: l.product_image ?? null,
+        size_label: l.size_label,
         price: l.price,
         mrp: l.mrp,
         quantity: l.quantity,
@@ -320,45 +255,9 @@ function applied(change: CartChange): CartLineData[] {
 
 function writeOf(
   lines: CartLineData[],
-  customer: Pick<CartRecord, 'customer_id' | 'customer_name'> | null,
+  piiId: string | null | undefined,
 ): CartWrite {
-  const totals = totalsOf(lines);
+  const { subtotal } = totalsOf(lines);
 
-  return {
-    items: lines,
-    item_count: totals.item_count,
-    subtotal: totals.subtotal,
-    total: totals.subtotal,
-    customer_id: customer?.customer_id ?? null,
-    customer_name: customer?.customer_name ?? null,
-  };
-}
-
-function stripView({
-  available_qty: _q,
-  available: _a,
-  price_changed: _p,
-  ...line
-}: ReturnType<typeof priceLines>[number]): CartLineData {
-  return line;
-}
-
-function savedView(cart: CartRecord): SavedCartView {
-  return {
-    id: String(cart._id),
-    customer_id: cart.customer_id,
-    customer_name: cart.customer_name,
-    items: cart.items.map((l) => ({
-      sku: l.sku,
-      product_id: l.product_id,
-      product_name: l.product_name,
-      product_image: l.product_image,
-      size_label: l.packaging_size,
-      quantity: l.quantity,
-    })),
-    item_count: cart.item_count,
-    subtotal: cart.subtotal,
-    reminder_sent: cart.reminder_sent,
-    updated_at: cart.updated_at,
-  };
+  return { items: lines, subtotal, total: subtotal, pii_id: piiId ?? null };
 }

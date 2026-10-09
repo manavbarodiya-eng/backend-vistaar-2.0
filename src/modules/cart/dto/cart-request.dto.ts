@@ -1,17 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsInt,
-  IsMongoId,
   IsOptional,
-  IsString,
-  Length,
   Matches,
   Max,
   Min,
   ValidateIf,
 } from 'class-validator';
-
-import { PageQueryDto } from '@common/dto/page-query.dto';
 
 import { MAX_QUANTITY } from '../cart.domain';
 
@@ -60,34 +55,18 @@ export class SkuParamDto {
   sku!: string;
 }
 
+/** ko-sales person ids: `PII-1620388`. */
+const PII_ID_PATTERN = /^PII-\d{1,15}$/;
+
 export class SetCartCustomerDto {
   @ApiProperty({
     type: String,
     nullable: true,
+    example: 'PII-1620388',
     description:
-      "Customer the cart is for; `null` for the partner's own shop stock.",
+      "The customer's `pii_id` the cart is for; `null` for the partner's own shop stock.",
   })
-  @ValidateIf((o: SetCartCustomerDto) => o.customer_id !== null)
-  @IsString()
-  @Length(1, 64)
-  customer_id!: string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    description: 'Shown on the saved-carts list.',
-  })
-  @IsOptional()
-  @IsString()
-  @Length(1, 120)
-  customer_name?: string | null;
+  @ValidateIf((o: SetCartCustomerDto) => o.pii_id !== null)
+  @Matches(PII_ID_PATTERN, { message: 'pii_id must look like PII-123.' })
+  pii_id!: string | null;
 }
-
-export class SavedCartParamDto {
-  @ApiProperty({ example: '6abbb5a498175c65660f0dee' })
-  @IsMongoId({ message: 'id is not a saved cart id.' })
-  id!: string;
-}
-
-/** Saved carts are listed newest first; `sort` is accepted and ignored. */
-export class SavedCartsQueryDto extends PageQueryDto {}
