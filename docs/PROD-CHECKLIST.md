@@ -14,7 +14,6 @@ What must exist in production before the matching feature is switched on.
 | `B2B_API_URL` | Production B2B Sales API — required, boot fails without it. No token: each request brings the agent's |
 | `B2B_MARKETPLACE_CODE` | `MKTP-1` unless the partner marketplace changes |
 | `CATALOG_CACHE_TTL_SECONDS` | `60` default |
-| `TRUST_PARTNER_HEADER` | **`false`** — `true` lets any caller act as any partner. Temporary, until login |
 
 ## Indexes
 
@@ -41,7 +40,7 @@ one routes to a single shard.
 
 ## Cart — before switching on
 
-- [ ] Login module's auth guard live, `TRUST_PARTNER_HEADER=false`, `PartnerHeaderGuard` deleted
+- [ ] Login module's auth guard live and `PartnerHeaderGuard` deleted — until then any caller can act as any partner via `x-partner-id`
 - [ ] `carts` index above built
 - [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts`, and that their own queries must filter on `source`
 

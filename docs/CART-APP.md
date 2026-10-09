@@ -12,7 +12,7 @@ nothing in a path or body says whose cart it is.
 | Header | Value | Why |
 |---|---|---|
 | `Authorization` | `Bearer <agent's B2B access token>` — the same token the app's `ApiClients.b2b` sends | The server prices the cart from the B2B catalogue with it. A 401 here means the token expired: renew it (as the B2B client already does) and retry |
-| `x-partner-id` | The partner's id | **Temporary, until the login module** (server needs `TRUST_PARTNER_HEADER=true`). When login ships the app drops it — routes stay the same |
+| `x-partner-id` | The partner's id | **Temporary, until the login module.** The B2B token can't identify the partner — the app signs in to B2B with one shared account — so this header is the partner's identity for now. When login ships the app drops it — routes stay the same |
 
 Missing either one → **401 `UNAUTHORIZED`**. Saved-cart list, reminder and
 delete need only `x-partner-id`.
