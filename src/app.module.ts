@@ -11,6 +11,7 @@ import { THROTTLE_OPTIONS } from '@core/throttle/throttle.config';
 import { validateEnv, type Env } from '@config/env.schema';
 import { DatabaseModule } from '@database/database.module';
 import { CartModule } from '@modules/cart/cart.module';
+import { DraftOrderModule } from '@modules/draft-order/draft-order.module';
 import { HealthModule } from '@modules/health/health.module';
 
 @Module({
@@ -53,6 +54,7 @@ import { HealthModule } from '@modules/health/health.module';
     //   controller → service → repository → schema
     HealthModule,
     CartModule,
+    DraftOrderModule,
   ],
   providers: [
     // The auth guard is registered here, ahead of the throttler, with the
