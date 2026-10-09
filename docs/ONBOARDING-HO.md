@@ -113,7 +113,9 @@ Published versions never change: each partner keeps the version they submitted.
 
 Field types and value shapes: ONBOARDING-APP.md §3. Publish rules: unique `step_id` and
 `key` (lowercase, digits, `_`), English label on every step and field, options for selects,
-valid regexes, `visible_if` pointing at a real field, and **a required `location` field**.
+valid regexes, `visible_if` pointing at a real field, and **no required `location` (GPS)
+field** — GPS is optional for every partner; a form saved earlier with it required is served
+and checked as optional.
 
 `maps_to` (where an approved value lands on the partner): `name`, `email`, `sub_cohort`,
 `address_line`, `village`, `district`, `state`, `pincode`, `location`, or `details.<anything>`.

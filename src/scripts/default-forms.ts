@@ -48,33 +48,8 @@ export const DEFAULT_COHORTS: DefaultCohort[] = [
     icon: '🏪',
     order: 1,
     sub_types: [],
-    details: [
-      {
-        key: 'shop_name',
-        type: 'text',
-        label: l('Shop name', 'दुकान का नाम'),
-        required: false,
-        maps_to: 'details.shop_name',
-        validation: { min_length: 2, max_length: 120 },
-      },
-      {
-        key: 'gstin',
-        type: 'text',
-        label: l('GSTIN (optional)'),
-        required: false,
-        maps_to: 'details.gstin',
-        validation: {
-          regex: '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$',
-        },
-      },
-      {
-        key: 'shop_photo',
-        type: 'document',
-        label: l('Shop front with signboard'),
-        required: false,
-        validation: { max_items: 2 },
-      },
-    ],
+    // The shop is optional: no details step for a Vistaar Agent.
+    details: [],
   },
   {
     key: 'ex_employee',
@@ -359,14 +334,18 @@ export function defaultSteps(cohort: DefaultCohort): StepDef[] {
         },
       ],
     },
-    {
-      step_id: 'details',
-      order: 3,
-      is_active: true,
-      icon: 'briefcase',
-      title: { ...cohort.label, en: `${cohort.label.en} details` },
-      fields: cohort.details,
-    },
+    ...(cohort.details.length
+      ? [
+          {
+            step_id: 'details',
+            order: 3,
+            is_active: true,
+            icon: 'briefcase',
+            title: { ...cohort.label, en: `${cohort.label.en} details` },
+            fields: cohort.details,
+          },
+        ]
+      : []),
     {
       step_id: 'kyc',
       order: 4,

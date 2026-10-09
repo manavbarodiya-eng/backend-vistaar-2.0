@@ -6,6 +6,7 @@ import {
   missingRequired,
   progress,
   requiredDocuments,
+  withOptionalLocation,
   withUrls,
   type FieldDef,
   type StepDef,
@@ -56,7 +57,7 @@ const steps: StepDef[] = [
         key: 'gps',
         type: 'location',
         label: en('GPS'),
-        required: true,
+        required: false,
         maps_to: 'location',
       },
       {
@@ -99,19 +100,23 @@ const steps: StepDef[] = [
   },
 ];
 
+/** [steps] as a form saved before GPS became optional. */
+const requiredGps: StepDef[] = steps.map((s) => ({
+  ...s,
+  fields: s.fields.map((f) =>
+    f.type === 'location' ? { ...f, required: true } : f,
+  ),
+}));
+
 describe('configErrors', () => {
   it('accepts a sound form', () => {
     expect(configErrors(steps)).toEqual([]);
   });
 
-  it('accepts a form whose GPS field is optional', () => {
-    const optionalGps = steps.map((s) => ({
-      ...s,
-      fields: s.fields.map((f) =>
-        f.type === 'location' ? { ...f, required: false } : f,
-      ),
-    }));
-    expect(configErrors(optionalGps)).toEqual([]);
+  it('refuses a required GPS field', () => {
+    expect(configErrors(requiredGps)).toEqual([
+      'steps.1.fields.0: a location (GPS) field cannot be required',
+    ]);
   });
 
   it('keeps org_document to one document field per key', () => {
@@ -266,9 +271,18 @@ describe('reading a form', () => {
 
   it('reports progress per required visible field', () => {
     expect(progress(steps, { full_name: 'R', has_shop: false })).toEqual({
-      completion_pct: 40,
+      completion_pct: 50,
       completed_steps: ['personal'],
     });
+  });
+
+  it('never requires GPS, even on a form saved with it required', () => {
+    const { gps: _, ...noGps } = raw;
+    expect(missingRequired(requiredGps, noGps)).toEqual([]);
+    expect(progress(requiredGps, noGps).completed_steps).toContain('location');
+    const served = withOptionalLocation(requiredGps);
+    expect(served[1].fields[0].required).toBe(false);
+    expect(served[1].fields[1].required).toBe(true);
   });
 
   it('maps onto the partner record', () => {

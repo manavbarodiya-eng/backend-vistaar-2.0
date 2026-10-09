@@ -26,6 +26,7 @@ import {
 } from '@modules/spine/services/pincode.service';
 
 import { SaveOnboardingDto } from '../dto/onboarding.dto';
+import { withOptionalLocation } from '../form.domain';
 import type { Cohort } from '../schemas/cohort.schema';
 import type { OnboardingConfig } from '../schemas/onboarding-config.schema';
 import { CohortsService } from '../services/cohorts.service';
@@ -93,7 +94,9 @@ export class OnboardingController {
       _id,
       cohort,
       version,
-      steps: steps.filter((s) => s.is_active).sort((a, b) => a.order - b.order),
+      steps: withOptionalLocation(
+        steps.filter((s) => s.is_active).sort((a, b) => a.order - b.order),
+      ),
     };
   }
 
