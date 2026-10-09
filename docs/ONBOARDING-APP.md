@@ -1,40 +1,62 @@
 # Onboarding — dynamic form (Vistaar app)
 
-**Base URL:** `{API_BASE}/api/v2` · bearer = partner `access_token` (AUTH-APP.md).
+**Base URL:** `{API_BASE}/api/v2` · bearer = partner `access_token` (AUTH-APP.md), except the
+three **public** reads (partner types, form, pincode) used by the Join wizard before login.
 
 The form is **not hard-coded in the app**. HO designs it per partner type (cohort) in the
 HO portal; the app downloads it and renders steps and fields from it. Everything the
 partner types is saved with `PATCH /onboarding` after every step (any number of calls);
 `POST /onboarding/submit` sends it for KYC review.
 
-## 1. Flow
+## 1. Flow — Join Vistaar as in the PRD and the app design
 
-Starts after **Join Vistaar** (signup OTP, AUTH-APP.md §1) — send the cohort the partner picked
-before the phone screen on the first `PATCH /onboarding` — and after any login where `GET /me`
-says `choose_cohort` or `complete_onboarding` (resume). A partner who has not been approved
-never lands on home.
+The signup wizard is filled **before** the OTP and verified **last** (PRD A2):
+Who you are → Mobile → Personal → Location → Details → Review → OTP → KYC checklist → submit.
 
 ```
-GET /onboarding/cohorts                 → partner-type picker
-GET /onboarding/config?cohort=<key>     → steps + fields (cache it; send If-None-Match → 304)
-PATCH /onboarding { cohort, step_id, data }   → first save creates the record
-PATCH /onboarding { step_id, data }           → every next step
-POST /uploads?purpose=<field_key>       → for file/document fields (multipart `file`)
-POST /onboarding/submit                 → stage kyc_review, form locked
-GET /me                                 → status screen
+BEFORE LOGIN (public — no token)
+  GET /onboarding/cohorts               → "Who you are": partner-type picker (+ sub_types for Other)
+  GET /onboarding/config?cohort=<key>   → the form for that type; render its steps
+                                          (cache it; send If-None-Match → 304)
+  GET /onboarding/pincode/:pincode      → prefill state / district on the Location step
+  … the app keeps every answer locally until the OTP is verified …
+
+OTP (AUTH-APP.md §1, intent: "signup")
+  POST /auth/otp/send   { phone, intent: "signup" }
+  POST /auth/otp/verify { phone, otp, intent: "signup" }   → session
+
+RIGHT AFTER VERIFY — one call saves the whole wizard
+  PATCH /onboarding { cohort, step_id: "<last step shown>", data: { …every answer… } }
+                                          (up to 100 fields per call; files are not in the wizard)
+
+KYC CHECKLIST (logged in)
+  POST /uploads?purpose=<field_key>     → for each document / photo (multipart `file`)
+  PATCH /onboarding { step_id, data }   → save each checklist item as it is done
+  POST /onboarding/submit               → stage kyc_review, form locked
+  GET /me                               → status tracker
 ```
+
+- Which fields belong to the wizard and which to the KYC checklist is the form's own steps:
+  the steps without `document` / `file` fields are the wizard, the rest is the checklist
+  (in the default forms: personal, location, details → wizard; kyc, agreement → checklist).
+- A partner who closes the app mid-way logs in later (`intent: "login"`): `GET /me` says
+  `complete_onboarding` and `GET /onboarding` returns everything already saved — resume there.
+- OTP-first (verify, then fill each step with `PATCH /onboarding`) works too; same calls.
+- A partner who has not been approved never lands on home.
 
 ## 2. Routes
 
-| Method | Path | Answer |
-|---|---|---|
-| GET | `/onboarding/cohorts` | `[{ _id, label{en,hi…}, description, icon, sub_types, order }]` |
-| GET | `/onboarding/config?cohort=` | `{ _id: "vistaar_agent@1", cohort, version, steps: [...] }` — active steps, in order |
-| GET | `/onboarding/pincode/:pincode` | `{ pincode, state, district, taluk }` or `null` — prefill the location step |
-| GET | `/onboarding` | my form (below), or `null` before the first save |
-| PATCH | `/onboarding` | `{ cohort?, step_id?, data: { key: value } }` → my form |
-| POST | `/onboarding/submit` | my form, `stage: kyc_review` |
-| POST | `/uploads?purpose=<field_key>` | multipart `file` (≤ 10 MB; JPG/PNG/WEBP/HEIC/PDF) → `{ path, url, content_type, size }` |
+| Method | Path | Auth | Answer |
+|---|---|---|---|
+| GET | `/onboarding/cohorts` | **public** | `[{ _id, label{en,hi…}, description, icon, sub_types, order }]` |
+| GET | `/onboarding/config?cohort=` | **public** | `{ _id: "vistaar_agent@2", cohort, version, steps: [...] }` — active steps, in order |
+| GET | `/onboarding/pincode/:pincode` | **public** | `{ pincode, state, district, taluk }` or `null` — prefill the location step |
+| GET | `/onboarding` | bearer | my form (below), or `null` before the first save |
+| PATCH | `/onboarding` | bearer | `{ cohort?, step_id?, data: { key: value } }` → my form |
+| POST | `/onboarding/submit` | bearer | my form, `stage: kyc_review` |
+| POST | `/uploads?purpose=<field_key>` | bearer | multipart `file` (≤ 10 MB; JPG/PNG/WEBP/HEIC/PDF) → `{ path, url, content_type, size }` |
+
+Public routes allow 60 calls a minute per network (429 beyond).
 
 ## 3. The config
 

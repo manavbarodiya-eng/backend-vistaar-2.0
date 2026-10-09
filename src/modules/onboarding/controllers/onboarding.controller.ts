@@ -14,8 +14,10 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { CurrentPartner } from '@common/decorators/current-principal.decorator';
+import { Public } from '@common/decorators/public.decorator';
 import { badRequest } from '@common/errors/api-error';
 import type { PartnerPrincipal } from '@common/interfaces/principal.interface';
 import {
@@ -33,6 +35,13 @@ import {
   type OnboardingView,
 } from '../services/onboarding.service';
 
+/**
+ * The partner-type list, the published forms and the pincode lookup are read
+ * before login: the Join Vistaar wizard (PRD A2, the app design) is filled
+ * first and verified by OTP last. Nothing in them is personal; per-IP limit.
+ */
+const PUBLIC_READ = { default: { limit: 60, ttl: 60_000 } };
+
 @ApiTags('app · onboarding')
 @ApiBearerAuth()
 @Controller('onboarding')
@@ -44,6 +53,8 @@ export class OnboardingController {
     private readonly pincodes: PincodeService,
   ) {}
 
+  @Public()
+  @Throttle(PUBLIC_READ)
   @Get('cohorts')
   @ApiOperation({
     summary: 'Partner types the app offers (active only), in display order',
@@ -65,6 +76,8 @@ export class OnboardingController {
     }));
   }
 
+  @Public()
+  @Throttle(PUBLIC_READ)
   @Get('config')
   @ApiOperation({
     summary:
@@ -84,6 +97,8 @@ export class OnboardingController {
     };
   }
 
+  @Public()
+  @Throttle(PUBLIC_READ)
   @Get('pincode/:pincode')
   @ApiOperation({
     summary:

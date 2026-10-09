@@ -25,6 +25,9 @@ JOIN VISTAAR (new partner) — PRD A2: choose cohort → phone → OTP → form
 ```
 
 - `intent` is `"login"` when left out. Send the **same intent** on send, resend and verify.
+- The OTP is **4 digits** (show four boxes, not six).
+- Join Vistaar collects the wizard answers **before** this OTP and saves them right after
+  verify (ONBOARDING-APP.md §1). No referral code for now — hide that field.
 - Login refuses a number that never finished signup (asked for an OTP, never verified) — it is
   not an account yet; the partner uses Join Vistaar.
 - After **every** verify and on every app start, call `GET /me` and route by `next_action` (§2).
