@@ -3,12 +3,14 @@ import { resolveCorsOrigin, validateEnv } from './env.schema';
 const BASE = {
   MONGODB_URI: 'mongodb://localhost:27017',
   VISTAAR_JWT_SECRET: 'x'.repeat(32),
+  B2B_API_URL: 'https://api.b2bsales.example/api/v1',
 };
 
 describe('validateEnv', () => {
   it('fails the boot naming the missing variable', () => {
     expect(() => validateEnv({})).toThrow(/MONGODB_URI/);
     expect(() => validateEnv({})).toThrow(/VISTAAR_JWT_SECRET/);
+    expect(() => validateEnv({})).toThrow(/B2B_API_URL/);
   });
 
   it('applies the defaults', () => {
@@ -23,6 +25,8 @@ describe('validateEnv', () => {
       ACCESS_TOKEN_TTL_SECONDS: 43200,
       REFRESH_TOKEN_TTL_DAYS: 30,
       OTP_API_URL: 'https://utils.ko-tech.in',
+      B2B_MARKETPLACE_CODE: 'MKTP-1',
+      CATALOG_CACHE_TTL_SECONDS: 60,
     });
   });
 

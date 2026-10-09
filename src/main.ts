@@ -90,8 +90,8 @@ async function bootstrap(): Promise<void> {
         .setVersion('2.0')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
         .addApiKey(
-          { type: 'apiKey', in: 'header', name: 'x-partner-id' },
-          'partner-header',
+          { type: 'apiKey', in: 'header', name: 'x-b2b-token' },
+          'b2b-token',
         )
         .build(),
     );

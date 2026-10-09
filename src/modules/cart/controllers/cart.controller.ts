@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
-import { CurrentPartner } from '@common/auth/current-partner.decorator';
+import { CurrentPartnerId } from '@common/auth/current-partner.decorator';
 import { PageResult } from '@common/http/page-result';
 
 import {
@@ -42,7 +42,7 @@ import { CartService } from '../services/cart.service';
  */
 @ApiTags('cart')
 @ApiBearerAuth()
-@ApiSecurity('partner-header')
+@ApiSecurity('b2b-token')
 @ApiExtraModels(PageResult, SavedCartView)
 @Controller('cart')
 export class CartController {
@@ -52,7 +52,7 @@ export class CartController {
   @ApiOperation({ summary: 'The active cart, priced live' })
   @ApiOkResponse({ type: CartView })
   get(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<CartView> {
     return this.cart.get(partnerId, token);
@@ -65,7 +65,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   addItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Body() dto: AddCartItemDto,
   ): Promise<CartView> {
@@ -78,7 +78,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   updateItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
     @Body() dto: UpdateCartItemDto,
@@ -90,7 +90,7 @@ export class CartController {
   @ApiOperation({ summary: 'Remove a line' })
   @ApiOkResponse({ type: CartView })
   removeItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
   ): Promise<CartView> {
@@ -101,7 +101,7 @@ export class CartController {
   @ApiOperation({ summary: 'Who the cart is for (null = own shop stock)' })
   @ApiOkResponse({ type: CartView })
   setCustomer(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Body() dto: SetCartCustomerDto,
   ): Promise<CartView> {
@@ -112,7 +112,7 @@ export class CartController {
   @ApiOperation({ summary: 'Empty the cart and clear its customer' })
   @ApiOkResponse({ type: CartView })
   clear(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<CartView> {
     return this.cart.clear(partnerId, token);
@@ -126,7 +126,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: SavedCartView })
   save(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<SavedCartView> {
     return this.cart.save(partnerId, token);
@@ -135,7 +135,7 @@ export class CartController {
   @Get('saved')
   @ApiOperation({ summary: 'Saved carts, newest first' })
   listSaved(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Query() query: SavedCartsQueryDto,
   ): Promise<PageResult<SavedCartView>> {
     return this.cart.listSaved(partnerId, query);
@@ -146,7 +146,7 @@ export class CartController {
   @ApiOperation({ summary: 'Replace the active cart with a saved one' })
   @ApiOkResponse({ type: CartView })
   restore(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { id }: SavedCartParamDto,
   ): Promise<CartView> {
@@ -158,7 +158,7 @@ export class CartController {
   @ApiOperation({ summary: 'Record that a WhatsApp reminder was sent' })
   @ApiOkResponse({ type: SavedCartView })
   markReminderSent(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Param() { id }: SavedCartParamDto,
   ): Promise<SavedCartView> {
     return this.cart.markReminderSent(partnerId, id);
@@ -167,7 +167,7 @@ export class CartController {
   @Delete('saved/:id')
   @ApiOperation({ summary: 'Delete a saved cart' })
   deleteSaved(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Param() { id }: SavedCartParamDto,
   ): Promise<{ deleted: true }> {
     return this.cart.deleteSaved(partnerId, id);
