@@ -56,11 +56,11 @@ race; onboarding create re-reads on a race; sessions are deleted on refresh (no 
 ### `carts` (shared, owned by B2B Sales — build with their sign-off)
 
 Nothing to build: every Vistaar read and write is by `_id` (derived from the
-partner id) plus `source` + `user_id`.
+partner id) plus `source`.
 
 **At scale (millions of partners):** if `carts` is sharded, shard on
-`{ _id: "hashed" }` or `{ user_id: "hashed" }` — every Vistaar query carries
-both, so each one routes to a single shard.
+`{ _id: "hashed" }` — every Vistaar query carries the `_id`, so each one
+routes to a single shard.
 
 ### `draft_orders` (shared — B2B order portal, Sankalp)
 
@@ -81,7 +81,7 @@ Nothing to build: the lookups use the existing `pii_id`, `phone_number` and
 ## Cart — before switching on
 
 - [x] Login module's auth guard live and `PartnerHeaderGuard` deleted — the cart reads the partner from the Vistaar token; the B2B token travels in `x-b2b-token`
-- [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts` (their shape, partner in `user_id`), and that their own queries must filter on `source`
+- [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts` (their shape: `pii_id` only, no `user_id`; the partner is in the derived `_id`), and that their own queries must filter on `source`
 
 ## Run
 
