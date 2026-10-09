@@ -70,7 +70,7 @@ against the values entered so far. A hidden required field is not required.
 | `object_list` | `[{ … }, { … }]` | repeatable group, `max_items` rows |
 
 `null` for a key clears it. Only the keys you send change — other steps are never overwritten.
-Files must be uploaded by this partner (`/uploads`); another partner's path is refused.
+Files must be uploaded by this partner (`/uploads` → `KO-documents/<your pii_id>/…`); anyone else's path is refused.
 
 ## 4. My form (`GET /onboarding`, and every PATCH/submit answer)
 

@@ -73,7 +73,7 @@ Detail:
 
 | Method | Path | Body | Rule |
 |---|---|---|---|
-| POST | `/admin/agents/:agentId/documents/:fieldKey/review` | `{ decision: verified\|rejected, reason? }` | only in `kyc_review`; reason required to reject |
+| POST | `/admin/agents/:agentId/documents/:fieldKey/review` | `{ decision: verified\|rejected, reason? }` | only in `kyc_review`; reason required to reject. A field with `org_document` (`adhar`, `pan`, `bank_details`, `selfie`) is copied to the person's org record `piis.documents` on verify, `is_verified: false` on reject; another portal's entry there is never replaced |
 | POST | `/admin/agents/:agentId/request-changes` | `{ remarks: { field_key: "note" } }` | rejected documents are added automatically; only these fields become editable for the partner |
 | POST | `/admin/agents/:agentId/approve` | — | **every required document verified** (else `409 DOCUMENTS_NOT_VERIFIED`, `details` = keys). Maps the form onto the partner (`maps_to`) |
 | POST | `/admin/agents/:agentId/reject` | `{ reason }` | from `kyc_review` or `changes_requested`; partner sees the reason |
@@ -111,6 +111,9 @@ valid regexes, `visible_if` pointing at a real field, and **a required `location
 
 `maps_to` (where an approved value lands on the partner): `name`, `email`, `sub_cohort`,
 `address_line`, `village`, `district`, `state`, `pincode`, `location`, or `details.<anything>`.
+
+`org_document` (document fields only, once per form): the `piis.documents` key a verified
+document is copied to — ko-sales spellings, e.g. `adhar`, `pan`, `bank_details`, `selfie`.
 
 ## 5. Settings
 

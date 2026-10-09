@@ -8,7 +8,8 @@ The old Vistaar (KSS app + `CRM-Backend`) keeps running on its own collections
 
 **The database is shared production data.** `CRM-Database` is used by ko-sales,
 Stockship, prasar, franchise and others. Read anything; write only our own
-`vistaar_v2_*` collections, plus a new person on `piis` (see *Shared records*).
+`vistaar_v2_*` collections, plus a new person and verified KYC documents on
+`piis` (see *Shared records*).
 
 Conventions follow `prasar-backend` (`CLAUDE.md` on its `beta` branch) and
 `franchise-offline-hub`, so the HO portal can talk to all three the same way.
@@ -111,7 +112,12 @@ The one shared write is the person on `piis`: at the first OTP verify,
 `modules/spine/PiiService` finds the PII by phone (oldest first) or inserts a
 new one (`app_counters.piis` `$inc`, retry on collision, never `referral_id`).
 `pii_id` (`PII-n`) is the true link; we keep a copy of the phone and name only
-for fast search. Farmers a partner registers later go through ko-sales
+for fast search. When HO verifies a KYC document whose form field has an
+`org_document`, `PiiService` copies it to `piis.documents.<type>` (ko-sales
+entry shape, `source: 'vistaar'`, dotted `$set` only) — never over another
+portal's entry. Files live private in the org bucket under
+`KO-documents/<pii_id>/`. Partners carry role `USR-1040` (Vistaar Partner; head
+USR-1037) on `vistaar_v2_agents.user_role`. Farmers a partner registers later go through ko-sales
 `POST /leads/upsert`, not through here.
 
 Other apps' collections read here, read-only: `agents_v2` (HO role, owner

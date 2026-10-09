@@ -15,7 +15,7 @@ What must exist in production before the matching feature is switched on.
 | `OTP_TEST_NUMBERS` / `OTP_TEST_CODE` | **must be empty** (boot refuses otherwise) |
 | `OTP_API_URL` | `https://utils.ko-tech.in` — DLT template for the Vistaar SMS confirmed with the utils owner |
 | `SSO_JWKS_URL` | `https://sso.ko-tech.in/.well-known/jwks.json` |
-| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_STORAGE_BUCKET` | KYC uploads (private objects + signed URLs). Without them `POST /uploads` answers 503 |
+| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_STORAGE_BUCKET` | KYC uploads: the org bucket (ko-sales', `micro-dealer.appspot.com`), private objects under `KO-documents/<pii_id>/`, signed URLs on read. Without them `POST /uploads` answers 503 |
 
 ## Indexes (create by hand on prod)
 
@@ -42,6 +42,8 @@ race; onboarding create re-reads on a race; sessions are deleted on refresh (no 
 
 - Run `node dist/scripts/seed-onboarding.js --apply` once (or create cohorts/forms in the portal).
 - `PUT /admin/settings { default_owner_agent_id }` — the HO person who owns new signups.
+- Role **USR-1040 "Vistaar Partner"** in `userroles` (`{ UserRoleId, role_name, agent_categories: [], __v: 0 }`) — by the ko-sales owner (`POST /api/v1/agents/roles` takes max+1, so check the max is USR-1039 first). Not on beta yet either.
+- Forms published before 2026-10-09 by the seed: `seed-onboarding.js --apply --republish` (12-digit Aadhaar, `org_document`).
 
 ## Owed by other teams
 
