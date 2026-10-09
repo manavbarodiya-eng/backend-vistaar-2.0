@@ -10,17 +10,24 @@ import { money, type CatalogVariant } from '@modules/catalog/catalog.domain';
 export const MAX_LINES = 100;
 export const MAX_QUANTITY = 9_999;
 
+/** A stored line — `CartLine` in the schema, B2B's shape. */
 export interface CartLineData {
-  sku: string;
   product_id: string;
+  sku: string;
   product_name: string;
-  product_image: string | null;
-  packaging_size: string;
+  product_image?: string;
   price: number;
-  mrp: number;
-  gst: number;
   quantity: number;
   total: number;
+  gst: number;
+  moq: number;
+  packaging_size: string;
+  packaging_type: string;
+  uom: string;
+  requested_weight: number;
+  item_type: string;
+  packaging_sku: string | null;
+  is_custom_packaging: boolean;
 }
 
 export type CartChangeFailure =
@@ -30,22 +37,31 @@ export type CartChange =
   | { ok: true; lines: CartLineData[] }
   | { ok: false; reason: CartChangeFailure };
 
-/** A line priced from the catalogue as it is now. */
+/**
+ * A line priced from the catalogue as it is now, filled the way B2B fills its
+ * own carts' lines (no custom packaging, `item_type: 'bulk'`).
+ */
 export function lineFrom(
   variant: CatalogVariant,
   quantity: number,
 ): CartLineData {
   return {
-    sku: variant.sku,
     product_id: variant.product_id,
+    sku: variant.sku,
     product_name: variant.product_name,
-    product_image: variant.product_image,
-    packaging_size: variant.size_label,
+    ...(variant.product_image ? { product_image: variant.product_image } : {}),
     price: variant.price,
-    mrp: variant.mrp,
-    gst: variant.gst,
     quantity,
     total: money(variant.price * quantity),
+    gst: variant.gst,
+    moq: variant.moq,
+    packaging_size: variant.packaging_size,
+    packaging_type: '',
+    uom: variant.uom,
+    requested_weight: 0,
+    item_type: 'bulk',
+    packaging_sku: null,
+    is_custom_packaging: false,
   };
 }
 
@@ -112,12 +128,12 @@ export function removeItem(
 }
 
 /**
- * A saved cart brought back into the active one, re-priced and re-capped at
- * today's stock. Packs no longer sold or out of stock are left out — the app's
- * own restore skips a product it cannot find the same way.
+ * Lines brought back from elsewhere (a draft order), re-priced and re-capped
+ * at today's stock. Packs no longer sold or out of stock are left out — the
+ * app's own restore skips a product it cannot find the same way.
  */
 export function restoreLines(
-  saved: readonly Pick<CartLineData, 'sku' | 'quantity'>[],
+  saved: readonly { sku: string; quantity: number }[],
   catalog: ReadonlyMap<string, CatalogVariant>,
 ): CartLineData[] {
   let lines: CartLineData[] = [];
@@ -146,6 +162,10 @@ export function totalsOf(lines: readonly CartLineData[]): CartTotals {
 }
 
 export interface PricedLine extends CartLineData {
+  /** Not stored — B2B's lines carry no MRP; read from the catalogue. */
+  mrp: number;
+  /** The app's pack label; the stored `packaging_size` when delisted. */
+  size_label: string;
   available_qty: number;
   /** Sold and in stock for the quantity in the cart. */
   available: boolean;
@@ -168,6 +188,8 @@ export function priceLines(
     if (!variant) {
       return {
         ...line,
+        mrp: 0,
+        size_label: `${line.packaging_size} ${line.uom}`.trim(),
         available_qty: 0,
         available: false,
         price_changed: false,
@@ -176,6 +198,8 @@ export function priceLines(
 
     return {
       ...lineFrom(variant, line.quantity),
+      mrp: variant.mrp,
+      size_label: variant.size_label,
       available_qty: variant.available_qty,
       available: line.quantity <= variant.available_qty,
       price_changed: variant.price !== line.price,

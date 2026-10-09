@@ -54,30 +54,33 @@ race; onboarding create re-reads on a race; sessions are deleted on refresh (no 
 - Firebase service account for uploads (same project as ko-sales, or a new one).
 ### `carts` (shared, owned by B2B Sales — build with their sign-off)
 
-The active cart is read by `_id` and needs nothing. Saved carts need:
-
-```js
-db.carts.createIndex(
-  { partner_id: 1, status: 1, updated_at: -1 },
-  {
-    name: "vistaar_partner_status_updated",
-    partialFilterExpression: { source: "vistaar" },
-  },
-)
-```
-
-Partial on `source: 'vistaar'`, so it costs B2B's rows nothing. Without it the
-saved-carts list and save are collection scans — fine on beta, not at scale.
+Nothing to build: every Vistaar read and write is by `_id` (derived from the
+partner id) plus `source` + `user_id`.
 
 **At scale (millions of partners):** if `carts` is sharded, shard on
-`{ partner_id: "hashed" }`. Every Vistaar query carries `partner_id`, so each
-one routes to a single shard.
+`{ _id: "hashed" }` or `{ user_id: "hashed" }` — every Vistaar query carries
+both, so each one routes to a single shard.
+
+### `draft_orders` (shared — B2B order portal, Sankalp)
+
+Nothing to build. The collection already has `draft_order_id` (unique),
+`agent_id` and `status`; every Vistaar query starts from `agent_id` (a
+partner's handful of drafts) or `draft_order_id`.
+
+### `piis`, `leads_v2`, `contacts_v2` (read-only)
+
+Nothing to build: the lookups use the existing `pii_id`, `phone_number` and
+`contact_id` indexes.
+
+## Draft orders — before switching on
+
+- [ ] `app_counters` has the `_id: 'draft_orders'` row in production (the API answers 503 `DRAFT_ID_UNAVAILABLE` without it — it never creates it)
+- [ ] B2B order-portal and Sankalp teams told `entry_path: 'vistaar'` rows exist in `draft_orders`, carry an extra `reminder_sent`, and take ids from the shared `DFT-n` series — their lists must filter on `entry_path` if they should not show them
 
 ## Cart — before switching on
 
 - [x] Login module's auth guard live and `PartnerHeaderGuard` deleted — the cart reads the partner from the Vistaar token; the B2B token travels in `x-b2b-token`
-- [ ] `carts` index above built
-- [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts`, and that their own queries must filter on `source`
+- [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts` (their shape, partner in `user_id`), and that their own queries must filter on `source`
 
 ## Run
 

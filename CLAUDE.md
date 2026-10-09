@@ -126,8 +126,18 @@ names), `pincode_map_v2`, and `franchises` / `prasar_v2_retailers` /
 
 **Exception — `carts`** (owned by B2B Sales): the cart module writes its rows
 there directly, by the user's decision (2026-10-08), always with
-`source: 'vistaar'` and always filtering on `source` + `partner_id`. No index
-is declared in code; the one it needs is in `docs/PROD-CHECKLIST.md`.
+`source: 'vistaar'` and always filtering on `source` + `user_id`. Its rows use
+B2B's existing row shape exactly — no Vistaar-only fields (user's decision,
+2026-10-09). No index is declared in code, and none is needed.
+
+**Exception — `draft_orders`** (shared with the B2B order portal and Sankalp):
+the draft-order module writes its rows there directly, by the user's decision
+(2026-10-09), always with `entry_path: 'vistaar'` and always filtering on
+`entry_path` + `agent_id`. Rows use the existing shape exactly, plus one
+user-approved field, `reminder_sent`. Its `DFT-n` ids come from the
+`app_counters` row `_id: 'draft_orders'` by the same atomic `$inc` the other
+writers make — the only write this module makes to `app_counters`, never an
+upsert.
 
 ---
 
@@ -142,11 +152,12 @@ is declared in code; the one it needs is in `docs/PROD-CHECKLIST.md`.
 | Sessions | `vistaar_v2_sessions` | SHA-256 of refresh tokens, TTL |
 | Settings | `vistaar_v2_settings` | Default owner, conflict radius |
 | Counters | `vistaar_v2_counters` | `VST-` series (not `app_counters`, not legacy `sequences`) |
+| cart | `carts` (shared, `source: 'vistaar'`) | B2B's row shape exactly; partner in `user_id`, customer in `pii_id`, `_id` derived from the partner. See `docs/DATABASE.md` |
+| draft-order | `draft_orders` (shared, `entry_path: 'vistaar'`) | Existing shape + `reminder_sent`; partner in `agent_id`; id from `app_counters`. See `docs/DATABASE.md` |
 
 Auth: partners use our own HS256 token (`core/auth/partner-token.service.ts`);
 HO routes (`@Can(...)`, `/admin/*`) accept only the company SSO token and check a
 capability from `modules/access/access.domain.ts`.
-| cart | `carts` (shared, `source: 'vistaar'`) | Active cart `_id` derived from `partner_id`. See `docs/DATABASE.md` |
 
 ---
 

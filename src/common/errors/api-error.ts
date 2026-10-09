@@ -59,10 +59,12 @@ export const API_ERROR_CODES = [
   // cart
   'OUT_OF_STOCK',
   'CART_LIMIT_REACHED',
-  'CART_EMPTY',
   'CART_BUSY',
   // catalog
   'CATALOG_UNAVAILABLE',
+  // draft orders
+  'DRAFT_CART_EMPTY',
+  'DRAFT_ID_UNAVAILABLE',
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

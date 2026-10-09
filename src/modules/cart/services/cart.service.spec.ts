@@ -4,7 +4,6 @@ import type { CatalogVariant } from '@modules/catalog/catalog.domain';
 import type { CatalogService } from '@modules/catalog/services/catalog.service';
 
 import { lineFrom } from '../cart.domain';
-import type { SavedCartsQueryDto } from '../dto/cart-request.dto';
 import type {
   CartRepository,
   CartWrite,
@@ -25,6 +24,9 @@ function variant(
     product_name: 'Product',
     product_image: null,
     size_label: '1 L',
+    packaging_size: '1',
+    uom: 'l',
+    moq: 1,
     price: 100,
     mrp: 150,
     gst: 0,
@@ -40,16 +42,16 @@ function record(
   return {
     _id: new Types.ObjectId(),
     source: 'vistaar',
-    partner_id: PARTNER,
-    status: 'active',
-    customer_key: null,
+    user_id: PARTNER,
     tax: 0,
     discount: 0,
-    reminder_sent: false,
-    version: 1,
+    __v: 0,
     created_at: new Date(),
     updated_at: new Date(),
-    ...write,
+    items: write.items,
+    subtotal: write.subtotal,
+    total: write.total,
+    ...(write.pii_id ? { pii_id: write.pii_id } : {}),
     ...overrides,
   };
 }
@@ -74,18 +76,10 @@ describe('CartService', () => {
         return Promise.resolve(true);
       }),
       updateActive: jest.fn((_p: string, version: number, data: CartWrite) => {
-        if (!active || active.version !== version)
-          return Promise.resolve(false);
-        active = record(data, { version: version + 1 });
+        if (!active || active.__v !== version) return Promise.resolve(false);
+        active = record(data, { __v: version + 1 });
         return Promise.resolve(true);
       }),
-      upsertSaved: jest.fn((_p: string, key: string, data: CartWrite) =>
-        Promise.resolve(record(data, { status: 'saved', customer_key: key })),
-      ),
-      listSaved: jest.fn(),
-      findSaved: jest.fn(),
-      markReminderSent: jest.fn(),
-      deleteSaved: jest.fn(),
     } as unknown as jest.Mocked<CartRepository>;
 
     const catalogService = {
@@ -128,13 +122,11 @@ describe('CartService', () => {
       const realFind = repo.findActive.getMockImplementation()!;
       repo.findActive.mockImplementationOnce(async (p) => {
         const snapshot = await realFind(p);
-        active = record(
-          {
-            ...active!,
-            items: [...active!.items, lineFrom(variant('K-2'), 1)],
-          },
-          { version: active!.version + 1 },
-        );
+        active = {
+          ...active!,
+          items: [...active!.items, lineFrom(variant('K-2'), 1)],
+          __v: active!.__v + 1,
+        };
         return snapshot;
       });
 
@@ -151,14 +143,7 @@ describe('CartService', () => {
     });
 
     it('gives up as CART_BUSY after repeated lost races', async () => {
-      active = record({
-        items: [],
-        item_count: 0,
-        subtotal: 0,
-        total: 0,
-        customer_id: null,
-        customer_name: null,
-      });
+      active = record({ items: [], subtotal: 0, total: 0, pii_id: null });
       repo.updateActive.mockResolvedValue(false);
 
       await expect(
@@ -215,98 +200,33 @@ describe('CartService', () => {
   });
 
   describe('setCustomer', () => {
-    it('drops the name when the cart goes back to own stock', async () => {
-      await service.setCustomer(PARTNER, TOKEN, {
-        customer_id: 'C-1',
-        customer_name: 'Ramesh',
+    it('stores the customer in pii_id, and leaves it off for own stock', async () => {
+      await service.addItem(PARTNER, TOKEN, { sku: 'K-1', quantity: 1 });
+
+      const forCustomer = await service.setCustomer(PARTNER, TOKEN, {
+        pii_id: 'PII-1620388',
       });
-      const view = await service.setCustomer(PARTNER, TOKEN, {
-        customer_id: null,
-        customer_name: 'Ramesh',
+      expect(forCustomer.pii_id).toBe('PII-1620388');
+      expect(active?.pii_id).toBe('PII-1620388');
+
+      const ownStock = await service.setCustomer(PARTNER, TOKEN, {
+        pii_id: null,
       });
-
-      expect(view).toMatchObject({ customer_id: null, customer_name: null });
-    });
-  });
-
-  describe('save', () => {
-    it('refuses an empty cart', async () => {
-      await expect(service.save(PARTNER, TOKEN)).rejects.toMatchObject({
-        response: { error: 'CART_EMPTY' },
-      });
-    });
-
-    it('saves one cart per customer, `self` for own stock, and keeps the active cart', async () => {
-      await service.addItem(PARTNER, TOKEN, { sku: 'K-1', quantity: 2 });
-
-      const saved = await service.save(PARTNER, TOKEN);
-
-      expect(repo.upsertSaved).toHaveBeenCalledWith(
-        PARTNER,
-        'self',
-        expect.objectContaining({ item_count: 2, subtotal: 200 }),
-      );
-      expect(saved).toMatchObject({
-        item_count: 2,
-        subtotal: 200,
-        reminder_sent: false,
-      });
+      expect(ownStock.pii_id).toBeNull();
+      expect(active).not.toHaveProperty('pii_id');
       expect(active?.items).toHaveLength(1);
     });
   });
 
-  describe('restore', () => {
-    it('404s a saved cart that is gone', async () => {
-      repo.findSaved.mockResolvedValue(null);
+  describe('clear', () => {
+    it('empties the lines and clears the customer', async () => {
+      await service.addItem(PARTNER, TOKEN, { sku: 'K-1', quantity: 1 });
+      await service.setCustomer(PARTNER, TOKEN, { pii_id: 'PII-1' });
 
-      await expect(service.restore(PARTNER, TOKEN, 'x')).rejects.toMatchObject({
-        status: 404,
-      });
-    });
+      const view = await service.clear(PARTNER, TOKEN);
 
-    it("replaces the active cart, re-capped at today's stock", async () => {
-      await service.addItem(PARTNER, TOKEN, { sku: 'K-2', quantity: 1 });
-      repo.findSaved.mockResolvedValue(
-        record(
-          {
-            items: [
-              lineFrom(variant('K-1'), 50),
-              lineFrom(variant('K-gone'), 1),
-            ],
-            item_count: 51,
-            subtotal: 5100,
-            total: 5100,
-            customer_id: 'C-1',
-            customer_name: 'Ramesh',
-          },
-          { status: 'saved' },
-        ),
-      );
-
-      const view = await service.restore(PARTNER, TOKEN, 'id');
-
-      expect(view.items.map((l) => [l.sku, l.quantity])).toEqual([['K-1', 10]]);
-      expect(view).toMatchObject({
-        customer_id: 'C-1',
-        customer_name: 'Ramesh',
-      });
-    });
-  });
-
-  describe('listSaved', () => {
-    it('pages the saved carts', async () => {
-      repo.listSaved.mockResolvedValue([[], 0]);
-      const query = { page: 2, limit: 10, skip: 10 } as SavedCartsQueryDto;
-
-      const page = await service.listSaved(PARTNER, query);
-
-      expect(repo.listSaved).toHaveBeenCalledWith(PARTNER, 10, 10);
-      expect(page).toMatchObject({
-        items: [],
-        page: 2,
-        limit: 10,
-        has_more: false,
-      });
+      expect(view).toMatchObject({ pii_id: null, items: [], subtotal: 0 });
+      expect(active).toMatchObject({ items: [], subtotal: 0, total: 0 });
     });
   });
 });

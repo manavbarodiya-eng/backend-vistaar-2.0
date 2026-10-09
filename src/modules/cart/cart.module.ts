@@ -15,5 +15,6 @@ import { CartService } from './services/cart.service';
   ],
   controllers: [CartController],
   providers: [CartRepository, CartService],
+  exports: [CartService],
 })
 export class CartModule {}

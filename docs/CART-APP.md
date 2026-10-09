@@ -1,8 +1,8 @@
 # Cart — mobile app contract
 
-The partner's cart and saved carts for the Flutter app's **Cart**, **Checkout**
-and **Saved carts** screens. Replaces the in-memory `CartRepository` and the
-on-device `vistaar.savedCarts` store.
+The partner's cart for the Flutter app's **Cart** and **Checkout** screens.
+Replaces the in-memory `CartRepository`. One cart per partner — saved / draft
+carts are the draft-orders API (`docs/DRAFT-ORDER-APP.md`).
 
 All routes are under `/api/v2/cart` and answer `{ "success": true, "data": … }`. The partner comes from the headers below —
 nothing in a path or body says whose cart it is.
@@ -14,14 +14,14 @@ nothing in a path or body says whose cart it is.
 | `Authorization` | `Bearer <Vistaar access token>` — from `POST /auth/otp/verify` (see `AUTH-APP.md`) | Says whose cart it is. 401 → refresh the session (`POST /auth/refresh`) and retry |
 | `x-b2b-token` | The app's B2B access token — the same token the app's `ApiClients.b2b` sends | The server prices the cart from the B2B catalogue with it. A 401 here means the B2B token expired: renew it (as the B2B client already does) and retry |
 
-Missing either one → **401 `UNAUTHORIZED`**. Saved-cart list, reminder and
-delete need only `Authorization`.
+Missing either one → **401 `UNAUTHORIZED`**.
 
 ## Lines are packs (`sku`), priced live
 
 A line is one **pack** (`sku`, e.g. `K-350`), not a product (`product_id` =
 `bulk_sku`, e.g. `BK-629`). The app's cart id `BK-629::1 L` maps to
-`product_id` + `size_label`.
+`product_id` + `size_label`. `mrp` and `size_label` come from the catalogue on
+every read (a delisted pack shows `mrp: 0`).
 
 Prices and stock come from the same B2B marketplace (`MKTP-1`) the Shop lists.
 The server never trusts a price from the client; every response re-prices each
@@ -42,26 +42,22 @@ are in stock gives 360, as the app's `Cart.add()` does.
 
 | Method | Path | Body | Does |
 |---|---|---|---|
-| `GET` | `/cart` | — | The active cart (empty if none yet) |
+| `GET` | `/cart` | — | The cart (empty if none yet) |
 | `POST` | `/cart/items` | `{ sku, quantity? = 1 }` | Adds to the line, capped at stock |
 | `PATCH` | `/cart/items/:sku` | `{ quantity }` | Sets quantity; `0` removes |
 | `DELETE` | `/cart/items/:sku` | — | Removes the line (no error if absent) |
-| `PUT` | `/cart/customer` | `{ customer_id \| null, customer_name? }` | Who it is for; `null` = own stock |
+| `PUT` | `/cart/customer` | `{ pii_id: "PII-123" \| null }` | Who it is for (the customer's `pii_id`); `null` = own stock |
 | `DELETE` | `/cart` | — | Empties it and clears the customer |
-| `POST` | `/cart/saved` | — | Saves a copy (one per customer); active cart kept |
-| `GET` | `/cart/saved?page&limit` | — | Saved carts, newest first (`PageResult`) |
-| `POST` | `/cart/saved/:id/restore` | — | Replaces the active cart, re-capped at stock |
-| `POST` | `/cart/saved/:id/reminder` | — | Marks the WhatsApp reminder sent |
-| `DELETE` | `/cart/saved/:id` | — | Deletes the saved cart |
 
-Every active-cart route returns the whole cart, so the app replaces its state
-with the response and never computes totals itself.
+Every route returns the whole cart, so the app replaces its state with the
+response and never computes totals itself. The customer's name is not stored on
+the cart — show it from the app's own customer list by `pii_id`.
 
 ### Cart
 
 ```json
 {
-  "customer_id": "C-12", "customer_name": "Ramesh",
+  "pii_id": "PII-1620388",
   "items": [{
     "sku": "K-217", "product_id": "BK-90", "product_name": "…",
     "product_image": "https://…", "size_label": "1 L",
@@ -76,29 +72,14 @@ with the response and never computes totals itself.
 Delivery fee, coins and commission stay in the app's `billFor()` for now and
 are settled by the orders API.
 
-### Saved cart
-
-```json
-{
-  "id": "6ac78e4b7d64841549cb0a6e", "customer_id": "C-12", "customer_name": "Ramesh",
-  "items": [{ "sku": "K-217", "product_id": "BK-90", "product_name": "…",
-              "product_image": null, "size_label": "1 L", "quantity": 3 }],
-  "item_count": 3, "subtotal": 960, "reminder_sent": false,
-  "updated_at": "2026-10-08T12:36:26.868Z"
-}
-```
-
-Saving again for the same customer (or for own stock) replaces that saved cart.
-
 ## Errors (`error.code`)
 
 | Status | Code | When | App shows |
 |---|---|---|---|
-| 400 | `VALIDATION_FAILED` | Bad sku, quantity outside 0–9999, bad id | `details[0]` |
+| 400 | `VALIDATION_FAILED` | Bad sku, quantity outside 0–9999, bad `pii_id` | `details[0]` |
 | 401 | `UNAUTHORIZED` | Vistaar token missing/expired, or B2B token missing/expired | Refresh the session or renew the B2B token, then retry |
-| 404 | `NOT_FOUND` | Pack not sold, line not in cart, saved cart gone | `message` |
+| 404 | `NOT_FOUND` | Pack not sold, line not in cart | `message` |
 | 409 | `OUT_OF_STOCK` | Nothing left to add | `message` |
 | 409 | `CART_LIMIT_REACHED` | 100 different packs already in the cart | `message` |
-| 409 | `CART_EMPTY` | Saving an empty cart | `message` |
 | 409 | `CART_BUSY` | Lost repeated write races (rare) — re-`GET` and retry | `message` |
 | 503 | `CATALOG_UNAVAILABLE` | B2B catalogue down with nothing cached | Retry later |

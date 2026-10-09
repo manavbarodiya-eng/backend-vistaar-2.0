@@ -22,7 +22,7 @@ export class CartLineView {
   @ApiProperty({ description: 'Live dealer price per pack.' })
   price!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Live MRP from the catalogue; 0 when delisted.' })
   mrp!: number;
 
   @ApiProperty()
@@ -42,11 +42,13 @@ export class CartLineView {
 }
 
 export class CartView {
-  @ApiProperty({ type: String, nullable: true })
-  customer_id!: string | null;
-
-  @ApiProperty({ type: String, nullable: true })
-  customer_name!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'PII-1620388',
+    description: "Who the cart is for; `null` = the partner's own stock.",
+  })
+  pii_id!: string | null;
 
   @ApiProperty({ type: [CartLineView] })
   items!: CartLineView[];
@@ -62,50 +64,4 @@ export class CartView {
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   updated_at!: Date | null;
-}
-
-export class SavedCartLineView {
-  @ApiProperty()
-  sku!: string;
-
-  @ApiProperty()
-  product_id!: string;
-
-  @ApiProperty()
-  product_name!: string;
-
-  @ApiProperty({ type: String, nullable: true })
-  product_image!: string | null;
-
-  @ApiProperty()
-  size_label!: string;
-
-  @ApiProperty()
-  quantity!: number;
-}
-
-export class SavedCartView {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty({ type: String, nullable: true })
-  customer_id!: string | null;
-
-  @ApiProperty({ type: String, nullable: true })
-  customer_name!: string | null;
-
-  @ApiProperty({ type: [SavedCartLineView] })
-  items!: SavedCartLineView[];
-
-  @ApiProperty()
-  item_count!: number;
-
-  @ApiProperty({ description: 'Value when saved.' })
-  subtotal!: number;
-
-  @ApiProperty()
-  reminder_sent!: boolean;
-
-  @ApiProperty({ type: String, format: 'date-time' })
-  updated_at!: Date;
 }

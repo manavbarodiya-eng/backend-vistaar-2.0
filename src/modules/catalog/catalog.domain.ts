@@ -10,6 +10,13 @@ export interface CatalogVariant {
   product_image: string | null;
   /** `1 L`, or `1 L × 5` — the app keys its size picker by this label. */
   size_label: string;
+  /**
+   * The whole pack's weight or volume in `uom`, as B2B's own cart rows store
+   * it: 460 gm × 2 → `'0.92'` with `uom: 'kg'`.
+   */
+  packaging_size: string;
+  uom: string;
+  moq: number;
   /** Dealer price: what the partner pays. */
   price: number;
   mrp: number;
@@ -56,6 +63,7 @@ export function variantsFromMarketplaceItem(item: unknown): CatalogVariant[] {
       (i): i is string => typeof i === 'string' && i.length > 0,
     );
     const stock = isRecord(v.avl_qty) ? num(v.avl_qty.available_qty) : 0;
+    const weight = packWeight(num(pack.value) * itemQty, str(pack.uom));
 
     return {
       sku,
@@ -63,12 +71,41 @@ export function variantsFromMarketplaceItem(item: unknown): CatalogVariant[] {
       product_name: str(item.name) || str(v.display_name),
       product_image: productImage ?? firstImage ?? null,
       size_label: label,
+      packaging_size: weight.size,
+      uom: weight.uom,
+      moq: Math.max(1, Math.trunc(num(v.moq))),
       price: money(num(v.dp)),
       mrp: money(num(v.mrp)),
       gst: num(v.gst_rate ?? v.gst),
       available_qty: Math.max(0, Math.trunc(stock)),
     };
   });
+}
+
+/** Grams and millilitres scale up to kg and L — the units B2B's carts use. */
+const BASE_UNITS: Record<string, string> = {
+  g: 'kg',
+  gm: 'kg',
+  gms: 'kg',
+  gram: 'kg',
+  grams: 'kg',
+  ml: 'l',
+};
+
+function packWeight(
+  amount: number,
+  uom: string,
+): { size: string; uom: string } {
+  const unit = uom.toLowerCase();
+  const base = BASE_UNITS[unit];
+
+  if (!base) return { size: String(round3(amount)), uom: unit };
+
+  return { size: String(round3(amount / 1000)), uom: base };
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 /** Rupees to the paisa — floating-point sums drift past two decimals. */
