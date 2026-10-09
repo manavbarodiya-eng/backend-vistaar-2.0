@@ -10,6 +10,10 @@ import { z } from 'zod';
  *
  * Auth (OTP, app tokens, SSO for the HO portal) and the ko-sales lead intake
  * add their variables with the login module.
+ *
+ * `B2B_API_URL` is required, not defaulted: the cart is priced from that
+ * catalogue. There is no B2B token here — B2B tokens belong to signed-in
+ * agents and expire, so each request brings its own.
  */
 
 /** `"true"`/`"false"` strings only — z.coerce.boolean() treats "false" as true. */

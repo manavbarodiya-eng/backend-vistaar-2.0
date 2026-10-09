@@ -7,6 +7,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppAuthGuard } from '@core/auth/app-auth.guard';
 import { AuthCoreModule } from '@core/auth/auth-core.module';
 import { AllExceptionsFilter } from '@core/filters/all-exceptions.filter';
+import { PartnerHeaderGuard } from '@core/guards/partner-header.guard';
 import { EnvelopeInterceptor } from '@core/interceptors/envelope.interceptor';
 import { THROTTLE_OPTIONS } from '@core/throttle/throttle.config';
 import { validateEnv, type Env } from '@config/env.schema';
@@ -14,6 +15,7 @@ import { DatabaseModule } from '@database/database.module';
 import { AccessModule } from '@modules/access/access.module';
 import { AgentsModule } from '@modules/agents/agents.module';
 import { AuthModule } from '@modules/auth/auth.module';
+import { CartModule } from '@modules/cart/cart.module';
 import { HealthModule } from '@modules/health/health.module';
 import { OnboardingModule } from '@modules/onboarding/onboarding.module';
 import { PartnerDeskModule } from '@modules/partner-desk/partner-desk.module';
@@ -69,6 +71,7 @@ import { UploadsModule } from '@modules/uploads/uploads.module';
     // HO portal's pipeline screens, composed from the modules above.
     PartnerDeskModule,
     HealthModule,
+    CartModule,
   ],
   providers: [
     // Auth is global and opted out of with @Public(). Ahead of the throttler,

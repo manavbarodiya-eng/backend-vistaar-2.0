@@ -89,6 +89,10 @@ async function bootstrap(): Promise<void> {
         )
         .setVersion('2.0')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
+        .addApiKey(
+          { type: 'apiKey', in: 'header', name: 'x-partner-id' },
+          'partner-header',
+        )
         .build(),
     );
     SwaggerModule.setup('docs', app, document, {

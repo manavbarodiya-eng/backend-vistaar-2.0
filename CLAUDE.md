@@ -124,6 +124,11 @@ Other apps' collections read here, read-only: `agents_v2` (HO role, owner
 names), `pincode_map_v2`, and `franchises` / `prasar_v2_retailers` /
 `vistaaragents` for the nearby-network warning.
 
+**Exception — `carts`** (owned by B2B Sales): the cart module writes its rows
+there directly, by the user's decision (2026-10-08), always with
+`source: 'vistaar'` and always filtering on `source` + `partner_id`. No index
+is declared in code; the one it needs is in `docs/PROD-CHECKLIST.md`.
+
 ---
 
 ## Collections
@@ -141,6 +146,7 @@ names), `pincode_map_v2`, and `franchises` / `prasar_v2_retailers` /
 Auth: partners use our own HS256 token (`core/auth/partner-token.service.ts`);
 HO routes (`@Can(...)`, `/admin/*`) accept only the company SSO token and check a
 capability from `modules/access/access.domain.ts`.
+| cart | `carts` (shared, `source: 'vistaar'`) | Active cart `_id` derived from `partner_id`. See `docs/DATABASE.md` |
 
 ---
 

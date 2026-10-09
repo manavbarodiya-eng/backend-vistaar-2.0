@@ -16,6 +16,9 @@ What must exist in production before the matching feature is switched on.
 | `OTP_API_URL` | `https://utils.ko-tech.in` — DLT template for the Vistaar SMS confirmed with the utils owner |
 | `SSO_JWKS_URL` | `https://sso.ko-tech.in/.well-known/jwks.json` |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_STORAGE_BUCKET` | KYC uploads: the org bucket (ko-sales', `micro-dealer.appspot.com`), private objects under `KO-documents/<pii_id>/`, signed URLs on read. Without them `POST /uploads` answers 503 |
+| `B2B_API_URL` | Production B2B Sales API — required, boot fails without it. No token: each request brings the agent's |
+| `B2B_MARKETPLACE_CODE` | `MKTP-1` unless the partner marketplace changes |
+| `CATALOG_CACHE_TTL_SECONDS` | `60` default |
 
 ## Indexes (create by hand on prod)
 
@@ -49,6 +52,32 @@ race; onboarding create re-reads on a race; sessions are deleted on refresh (no 
 
 - SMS template / DLT for Vistaar on the utilities OTP service.
 - Firebase service account for uploads (same project as ko-sales, or a new one).
+### `carts` (shared, owned by B2B Sales — build with their sign-off)
+
+The active cart is read by `_id` and needs nothing. Saved carts need:
+
+```js
+db.carts.createIndex(
+  { partner_id: 1, status: 1, updated_at: -1 },
+  {
+    name: "vistaar_partner_status_updated",
+    partialFilterExpression: { source: "vistaar" },
+  },
+)
+```
+
+Partial on `source: 'vistaar'`, so it costs B2B's rows nothing. Without it the
+saved-carts list and save are collection scans — fine on beta, not at scale.
+
+**At scale (millions of partners):** if `carts` is sharded, shard on
+`{ partner_id: "hashed" }`. Every Vistaar query carries `partner_id`, so each
+one routes to a single shard.
+
+## Cart — before switching on
+
+- [ ] Login module's auth guard live and `PartnerHeaderGuard` deleted — until then any caller can act as any partner via `x-partner-id`
+- [ ] `carts` index above built
+- [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts`, and that their own queries must filter on `source`
 
 ## Run
 

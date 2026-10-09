@@ -56,6 +56,13 @@ export const API_ERROR_CODES = [
   'FILE_REQUIRED',
   'FILE_TOO_LARGE',
   'FILE_TYPE_NOT_ALLOWED',
+  // cart
+  'OUT_OF_STOCK',
+  'CART_LIMIT_REACHED',
+  'CART_EMPTY',
+  'CART_BUSY',
+  // catalog
+  'CATALOG_UNAVAILABLE',
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
@@ -152,3 +159,10 @@ export const conflict = (
   message: string,
   details?: string[],
 ): HttpException => apiError(HttpStatus.CONFLICT, code, message, details);
+
+export const serviceUnavailable = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException =>
+  apiError(HttpStatus.SERVICE_UNAVAILABLE, code, message, details);
