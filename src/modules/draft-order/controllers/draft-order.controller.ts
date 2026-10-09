@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
-import { CurrentPartner } from '@common/auth/current-partner.decorator';
+import { CurrentPartnerId } from '@common/auth/current-partner.decorator';
 import { PageResult } from '@common/http/page-result';
 import { CartView } from '@modules/cart/dto/cart-view.dto';
 
@@ -36,7 +36,7 @@ import { DraftOrderService } from '../services/draft-order.service';
  */
 @ApiTags('draft-orders')
 @ApiBearerAuth()
-@ApiSecurity('partner-header')
+@ApiSecurity('b2b-token')
 @ApiExtraModels(PageResult, DraftOrderView)
 @Controller('draft-orders')
 export class DraftOrderController {
@@ -50,7 +50,7 @@ export class DraftOrderController {
   })
   @ApiOkResponse({ type: DraftOrderView })
   save(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<DraftOrderView> {
     return this.drafts.save(partnerId, token);
@@ -59,7 +59,7 @@ export class DraftOrderController {
   @Get()
   @ApiOperation({ summary: 'Open drafts, newest first' })
   list(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Query() query: DraftOrdersQueryDto,
   ): Promise<PageResult<DraftOrderView>> {
     return this.drafts.list(partnerId, query);
@@ -69,7 +69,7 @@ export class DraftOrderController {
   @ApiOperation({ summary: 'One open draft' })
   @ApiOkResponse({ type: DraftOrderView })
   get(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Param() { id }: DraftOrderParamDto,
   ): Promise<DraftOrderView> {
     return this.drafts.get(partnerId, id);
@@ -83,7 +83,7 @@ export class DraftOrderController {
   })
   @ApiOkResponse({ type: CartView })
   restore(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { id }: DraftOrderParamDto,
   ): Promise<CartView> {
@@ -95,7 +95,7 @@ export class DraftOrderController {
   @ApiOperation({ summary: 'Record that a WhatsApp reminder was sent' })
   @ApiOkResponse({ type: DraftOrderView })
   markReminderSent(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Param() { id }: DraftOrderParamDto,
   ): Promise<DraftOrderView> {
     return this.drafts.markReminderSent(partnerId, id);
@@ -104,7 +104,7 @@ export class DraftOrderController {
   @Delete(':id')
   @ApiOperation({ summary: 'Delete an open draft' })
   delete(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @Param() { id }: DraftOrderParamDto,
   ): Promise<{ deleted: true }> {
     return this.drafts.delete(partnerId, id);

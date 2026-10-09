@@ -4,15 +4,23 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
+import { AppAuthGuard } from '@core/auth/app-auth.guard';
+import { AuthCoreModule } from '@core/auth/auth-core.module';
 import { AllExceptionsFilter } from '@core/filters/all-exceptions.filter';
-import { PartnerHeaderGuard } from '@core/guards/partner-header.guard';
 import { EnvelopeInterceptor } from '@core/interceptors/envelope.interceptor';
 import { THROTTLE_OPTIONS } from '@core/throttle/throttle.config';
 import { validateEnv, type Env } from '@config/env.schema';
 import { DatabaseModule } from '@database/database.module';
+import { AccessModule } from '@modules/access/access.module';
+import { AgentsModule } from '@modules/agents/agents.module';
+import { AuthModule } from '@modules/auth/auth.module';
 import { CartModule } from '@modules/cart/cart.module';
 import { DraftOrderModule } from '@modules/draft-order/draft-order.module';
 import { HealthModule } from '@modules/health/health.module';
+import { OnboardingModule } from '@modules/onboarding/onboarding.module';
+import { PartnerDeskModule } from '@modules/partner-desk/partner-desk.module';
+import { SettingsModule } from '@modules/settings/settings.module';
+import { UploadsModule } from '@modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -35,9 +43,11 @@ import { HealthModule } from '@modules/health/health.module';
           redact: {
             paths: [
               'req.headers.authorization',
+              'req.headers["x-b2b-token"]',
               'req.headers.cookie',
               'req.body.otp',
               'req.body.refresh_token',
+              'req.body.data',
             ],
             remove: true,
           },
@@ -48,20 +58,28 @@ import { HealthModule } from '@modules/health/health.module';
     ThrottlerModule.forRoot(THROTTLE_OPTIONS),
 
     DatabaseModule,
+    AuthCoreModule,
 
     // ── Feature modules ──────────────────────────────────────────────
     // One folder per module under src/modules/, each with the four layers:
     //   controller → service → repository → schema
+    AccessModule,
+    SettingsModule,
+    AgentsModule,
+    AuthModule,
+    UploadsModule,
+    OnboardingModule,
+    // HO portal's pipeline screens, composed from the modules above.
+    PartnerDeskModule,
     HealthModule,
     CartModule,
     DraftOrderModule,
   ],
   providers: [
-    // The auth guard is registered here, ahead of the throttler, with the
-    // login module: the throttler keys on the verified `request.user`, which
-    // only exists once that guard has run. Until then `PartnerHeaderGuard`
-    // stands in — remove it with login.
-    { provide: APP_GUARD, useClass: PartnerHeaderGuard },
+    // Auth is global and opted out of with @Public(). Ahead of the throttler,
+    // and the order is load-bearing: the throttler keys on the verified
+    // `request.user`, which only exists once this guard has run.
+    { provide: APP_GUARD, useExisting: AppAuthGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

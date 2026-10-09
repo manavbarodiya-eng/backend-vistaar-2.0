@@ -19,7 +19,7 @@ import {
 } from '@nestjs/swagger';
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
-import { CurrentPartner } from '@common/auth/current-partner.decorator';
+import { CurrentPartnerId } from '@common/auth/current-partner.decorator';
 
 import {
   AddCartItemDto,
@@ -37,7 +37,7 @@ import { CartService } from '../services/cart.service';
  */
 @ApiTags('cart')
 @ApiBearerAuth()
-@ApiSecurity('partner-header')
+@ApiSecurity('b2b-token')
 @Controller('cart')
 export class CartController {
   constructor(private readonly cart: CartService) {}
@@ -46,7 +46,7 @@ export class CartController {
   @ApiOperation({ summary: 'The active cart, priced live' })
   @ApiOkResponse({ type: CartView })
   get(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<CartView> {
     return this.cart.get(partnerId, token);
@@ -59,7 +59,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   addItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Body() dto: AddCartItemDto,
   ): Promise<CartView> {
@@ -72,7 +72,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   updateItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
     @Body() dto: UpdateCartItemDto,
@@ -84,7 +84,7 @@ export class CartController {
   @ApiOperation({ summary: 'Remove a line' })
   @ApiOkResponse({ type: CartView })
   removeItem(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
   ): Promise<CartView> {
@@ -97,7 +97,7 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   setCustomer(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
     @Body() dto: SetCartCustomerDto,
   ): Promise<CartView> {
@@ -108,7 +108,7 @@ export class CartController {
   @ApiOperation({ summary: 'Empty the cart and clear its customer' })
   @ApiOkResponse({ type: CartView })
   clear(
-    @CurrentPartner() partnerId: string,
+    @CurrentPartnerId() partnerId: string,
     @B2bToken() token: string,
   ): Promise<CartView> {
     return this.cart.clear(partnerId, token);

@@ -11,8 +11,8 @@ nothing in a path or body says whose cart it is.
 
 | Header | Value | Why |
 |---|---|---|
-| `Authorization` | `Bearer <agent's B2B access token>` — the same token the app's `ApiClients.b2b` sends | The server prices the cart from the B2B catalogue with it. A 401 here means the token expired: renew it (as the B2B client already does) and retry |
-| `x-partner-id` | The partner's id | **Temporary, until the login module.** The B2B token can't identify the partner — the app signs in to B2B with one shared account — so this header is the partner's identity for now. When login ships the app drops it — routes stay the same |
+| `Authorization` | `Bearer <Vistaar access token>` — from `POST /auth/otp/verify` (see `AUTH-APP.md`) | Says whose cart it is. 401 → refresh the session (`POST /auth/refresh`) and retry |
+| `x-b2b-token` | The app's B2B access token — the same token the app's `ApiClients.b2b` sends | The server prices the cart from the B2B catalogue with it. A 401 here means the B2B token expired: renew it (as the B2B client already does) and retry |
 
 Missing either one → **401 `UNAUTHORIZED`**.
 
@@ -77,7 +77,7 @@ are settled by the orders API.
 | Status | Code | When | App shows |
 |---|---|---|---|
 | 400 | `VALIDATION_FAILED` | Bad sku, quantity outside 0–9999, bad `pii_id` | `details[0]` |
-| 401 | `UNAUTHORIZED` | Missing `x-partner-id`, or B2B token missing/expired | Renew B2B token and retry; else sign-in |
+| 401 | `UNAUTHORIZED` | Vistaar token missing/expired, or B2B token missing/expired | Refresh the session or renew the B2B token, then retry |
 | 404 | `NOT_FOUND` | Pack not sold, line not in cart | `message` |
 | 409 | `OUT_OF_STOCK` | Nothing left to add | `message` |
 | 409 | `CART_LIMIT_REACHED` | 100 different packs already in the cart | `message` |

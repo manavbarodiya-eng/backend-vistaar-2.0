@@ -1,5 +1,6 @@
 import compress from '@fastify/compress';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
@@ -44,6 +45,10 @@ async function bootstrap(): Promise<void> {
   // The ETag hook is a root `onSend`, so it hashes the JSON before compress.
   registerJsonEtag(app.getHttpAdapter().getInstance());
   await app.register(compress, { threshold: JSON_COMPRESS_THRESHOLD_BYTES });
+  // KYC photos and PDFs — one file per request, 10 MB, enforced again per route.
+  await app.register(multipart, {
+    limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 5 },
+  });
 
   // Empty CORS_ORIGINS means no browser origin is allowed, `*` means any. The
   // mobile app is unaffected either way — native clients send no Origin header.
@@ -85,8 +90,8 @@ async function bootstrap(): Promise<void> {
         .setVersion('2.0')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
         .addApiKey(
-          { type: 'apiKey', in: 'header', name: 'x-partner-id' },
-          'partner-header',
+          { type: 'apiKey', in: 'header', name: 'x-b2b-token' },
+          'b2b-token',
         )
         .build(),
     );

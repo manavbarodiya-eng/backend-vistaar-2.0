@@ -11,8 +11,8 @@ the app does today.
 
 All routes are under `/api/v2/draft-orders` and answer
 `{ "success": true, "data": … }`. Headers are the cart's
-(`docs/CART-APP.md`): `Authorization: Bearer <agent's B2B token>` and, until
-login, `x-partner-id`.
+(`docs/CART-APP.md`): `Authorization: Bearer <Vistaar access token>` (whose drafts they are) and
+`x-b2b-token` (the B2B token that prices the cart).
 
 ## Routes
 
@@ -63,4 +63,4 @@ login, `x-partner-id`.
 | 404 | `NOT_FOUND` | Draft not found / not yours / already ordered; or the cart's customer no longer exists |
 | 503 | `DRAFT_ID_UNAVAILABLE` | Draft ids cannot be issued — retry later |
 | 409 | `CART_BUSY` | Restore: the cart was changed on another device — retry |
-| 401 | `UNAUTHORIZED` | Missing token or `x-partner-id` |
+| 401 | `UNAUTHORIZED` | Vistaar token or B2B token missing/expired |
