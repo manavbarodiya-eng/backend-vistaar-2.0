@@ -9,9 +9,10 @@ partner types is saved with `PATCH /onboarding` after every step (any number of 
 
 ## 1. Flow
 
-Starts right after login whenever `GET /me` says `next_action: "choose_cohort"` (a new
-partner) or `"complete_onboarding"` (resume) — see AUTH-APP.md §1. A partner who has not
-been approved never lands on home.
+Starts after **Join Vistaar** (signup OTP, AUTH-APP.md §1) — send the cohort the partner picked
+before the phone screen on the first `PATCH /onboarding` — and after any login where `GET /me`
+says `choose_cohort` or `complete_onboarding` (resume). A partner who has not been approved
+never lands on home.
 
 ```
 GET /onboarding/cohorts                 → partner-type picker

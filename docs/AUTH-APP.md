@@ -6,33 +6,41 @@
 Partners are not company staff: they sign in with a mobile number and an OTP, and this
 API issues their session itself. The HO portal keeps using the company SSO login.
 
-## 1. The flow
+## 1. The flow — two doors, as in the PRD
 
 ```
-Phone screen ──POST /auth/otp/send──▶ partner record created (otp_verified: false)
-                                      SMS sent (4-digit OTP)
-OTP screen  ──POST /auth/otp/verify─▶ first time: VST-000001 given, person linked (pii_id)
-                                      → access_token + refresh_token
-App         ──GET /me───────────────▶ where the application stands → which screen to open
+LOGIN (existing partner)
+  Phone ──POST /auth/otp/send { phone }──────────────▶ 404 ACCOUNT_NOT_FOUND → show
+                                                        "No account with this number" + "Join Vistaar"
+                                                       200 → SMS sent
+  OTP   ──POST /auth/otp/verify { phone, otp }────────▶ session
+  App   ──GET /me──────────────────────────────────────▶ open the screen `next_action` names
+
+JOIN VISTAAR (new partner) — PRD A2: choose cohort → phone → OTP → form
+  Phone ──POST /auth/otp/send { phone, intent: "signup" }─▶ 409 ACCOUNT_EXISTS → "Log in instead"
+                                                            200 → partner record created, SMS sent
+  OTP   ──POST /auth/otp/verify { phone, otp, intent: "signup" }─▶ VST-… given, person linked → session
+  Form  ──PATCH /onboarding { cohort, step_id, data }──▶ the cohort picked before the phone screen
+                                                        starts the application (ONBOARDING-APP.md)
 ```
+
+- `intent` is `"login"` when left out. Send the **same intent** on send, resend and verify.
+- Login refuses a number that never finished signup (asked for an OTP, never verified) — it is
+  not an account yet; the partner uses Join Vistaar.
+- After **every** verify and on every app start, call `GET /me` and route by `next_action` (§2).
+  A logged-in partner is not necessarily approved: only `next_action: "approved"` opens home, and
+  ordering waits for `ordering_unlocked: true`. A partner who joined but did not finish the form
+  gets `choose_cohort` / `complete_onboarding` and resumes onboarding.
 
 India (+91) numbers only for now.
-
-> **Login *is* signup.** There is no separate signup screen or API: the first OTP verify of
-> a new number creates the partner (`stage: "signed_up"`, not approved). A verified login
-> therefore does **not** mean "open home". After every verify and on every app start, call
-> `GET /me` and open the screen its `next_action` names (table in §2). Only
-> `next_action: "approved"` goes to home, and ordering is enabled only when
-> `ordering_unlocked` is `true`. A brand-new partner gets `choose_cohort` → partner-type
-> picker → the onboarding form (ONBOARDING-APP.md).
 
 ## 2. Routes
 
 | Method | Path | Auth | Body | Answer |
 |---|---|---|---|---|
-| POST | `/auth/otp/send` | public | `{ phone, country_code? }` | `{ sent: true, resend_after_seconds: 30 }` |
-| POST | `/auth/otp/resend` | public | `{ phone, country_code? }` | same |
-| POST | `/auth/otp/verify` | public | `{ phone, country_code?, otp }` | session (below) |
+| POST | `/auth/otp/send` | public | `{ phone, country_code?, intent? }` | `{ sent: true, resend_after_seconds: 30 }` |
+| POST | `/auth/otp/resend` | public | `{ phone, country_code?, intent? }` | same |
+| POST | `/auth/otp/verify` | public | `{ phone, country_code?, otp, intent? }` | session (below) |
 | POST | `/auth/refresh` | public | `{ refresh_token }` | a new session — **store the new refresh token** |
 | POST | `/auth/logout` | bearer | `{ refresh_token }` | `{ signed_out: true }` — this device only |
 | GET | `/me` | bearer | — | status (below) |
@@ -92,6 +100,8 @@ the same value, usable for the first screen right after login):
 |---|---|---|
 | `INVALID_PHONE` | 400 | not a 10-digit Indian mobile |
 | `OTP_NOT_REQUESTED` | 400 | verify before send — go back to the phone screen |
+| `ACCOUNT_NOT_FOUND` | 404 | login with a number that has no account — show "No account with this number" and the **Join Vistaar** button |
+| `ACCOUNT_EXISTS` | 409 | Join Vistaar with a registered number — show "Already registered" and switch to **Log in** |
 | `OTP_INVALID` | 401 | wrong or expired OTP (message says which) |
 | `OTP_LIMIT` | 429 | too many SMS (3 per 10 min) or tries (5 per 10 min); `details[0]` = `retry_after_seconds=N` |
 | `OTP_UNAVAILABLE` | 503 | SMS service down — retry later |

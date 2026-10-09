@@ -20,6 +20,9 @@ export const API_ERROR_CODES = [
   // Login. `OTP_LIMIT` is a 429: the app shows a wait, never a retry loop.
   'INVALID_PHONE',
   'OTP_NOT_REQUESTED',
+  // Login vs Join Vistaar: the app offers the other door.
+  'ACCOUNT_NOT_FOUND',
+  'ACCOUNT_EXISTS',
   'OTP_INVALID',
   'OTP_LIMIT',
   'OTP_UNAVAILABLE',

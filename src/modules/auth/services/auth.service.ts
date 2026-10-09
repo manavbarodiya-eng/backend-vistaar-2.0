@@ -13,6 +13,12 @@ import {
 } from '@modules/agents/services/agents.service';
 import { PiiService } from '@modules/spine/services/pii.service';
 
+import {
+  checkBeforeSend,
+  checkBeforeVerify,
+  type AccountCheck,
+  type OtpIntent,
+} from '../auth.domain';
 import type { OtpSentDto, SessionDto } from '../dto/auth.dto';
 import { SessionRepository } from '../repositories/session.repository';
 import { OtpService } from './otp.service';
@@ -48,9 +54,14 @@ export class AuthService {
     rawPhone: string,
     countryCode: string,
     resend: boolean,
+    intent: OtpIntent,
   ): Promise<OtpSentDto> {
     const phone = this.phone(rawPhone);
-    const agent = await this.agents.registerOtpRequest(phone, countryCode);
+    const existing = await this.agents.findByPhone(phone, countryCode);
+    this.refuseAccount(checkBeforeSend(intent, existing));
+    // Only signup creates the record; login sends to a partner who exists.
+    const agent =
+      existing ?? (await this.agents.registerOtpRequest(phone, countryCode));
     this.refuseBlocked(agent);
     await this.otp.send(phone, countryCode, resend);
     return { sent: true, resend_after_seconds: RESEND_AFTER_SECONDS };
@@ -61,6 +72,7 @@ export class AuthService {
     countryCode: string,
     otp: string,
     userAgent: string | null,
+    intent: OtpIntent,
   ): Promise<SessionDto> {
     const phone = this.phone(rawPhone);
     const agent = await this.agents.findByPhone(phone, countryCode);
@@ -71,6 +83,7 @@ export class AuthService {
       );
     }
 
+    this.refuseAccount(checkBeforeVerify(intent, agent));
     await this.otp.verify(phone, countryCode, otp);
     this.refuseBlocked(agent);
 
@@ -160,6 +173,24 @@ export class AuthService {
         'Enter a valid 10-digit mobile number.',
       );
     return phone;
+  }
+
+  /** The other door, said plainly — the app shows "Join Vistaar" or "Log in" from the code. */
+  private refuseAccount(check: AccountCheck): void {
+    if (check === 'not_found') {
+      throw apiError(
+        HttpStatus.NOT_FOUND,
+        'ACCOUNT_NOT_FOUND',
+        'No Vistaar account with this number. Tap Join Vistaar to sign up.',
+      );
+    }
+    if (check === 'exists') {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'ACCOUNT_EXISTS',
+        'This number already has a Vistaar account. Log in instead.',
+      );
+    }
   }
 
   private refuseBlocked(agent: AgentRecord): void {

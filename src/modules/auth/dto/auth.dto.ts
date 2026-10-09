@@ -9,6 +9,8 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { OTP_INTENTS, type OtpIntent } from '../auth.domain';
+
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
@@ -27,6 +29,17 @@ export class OtpRequestDto {
   @IsOptional()
   @IsIn(['+91'], { message: 'Only +91 numbers are supported.' })
   country_code: string = '+91';
+
+  @ApiPropertyOptional({
+    enum: OTP_INTENTS,
+    default: 'login',
+    description:
+      '`login` (default) — an existing partner only, else 404 ACCOUNT_NOT_FOUND. ' +
+      '`signup` — Join Vistaar; a registered number gets 409 ACCOUNT_EXISTS.',
+  })
+  @IsOptional()
+  @IsIn(OTP_INTENTS)
+  intent: OtpIntent = 'login';
 }
 
 export class OtpVerifyDto extends OtpRequestDto {

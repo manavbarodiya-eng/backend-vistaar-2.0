@@ -34,11 +34,11 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'Send an OTP. Creates the partner record (otp_verified=false) on first use.',
+      'Send an OTP. `intent: login` (default) needs an existing partner; `intent: signup` (Join Vistaar) creates the record.',
   })
   @ApiOkResponse({ type: OtpSentDto })
   send(@Body() dto: OtpRequestDto): Promise<OtpSentDto> {
-    return this.auth.sendOtp(dto.phone, dto.country_code, false);
+    return this.auth.sendOtp(dto.phone, dto.country_code, false, dto.intent);
   }
 
   @Public()
@@ -48,7 +48,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Resend the OTP (same limits as send)' })
   @ApiOkResponse({ type: OtpSentDto })
   resend(@Body() dto: OtpRequestDto): Promise<OtpSentDto> {
-    return this.auth.sendOtp(dto.phone, dto.country_code, true);
+    return this.auth.sendOtp(dto.phone, dto.country_code, true, dto.intent);
   }
 
   @Public()
@@ -69,6 +69,7 @@ export class AuthController {
       dto.country_code,
       dto.otp,
       userAgent ?? null,
+      dto.intent,
     );
   }
 
