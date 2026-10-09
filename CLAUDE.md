@@ -114,13 +114,18 @@ name and phone only for fast search.
 Our record is written first; the ko-sales call second. A failed call never
 fails the partner's request — it is recorded on the partner and retried.
 
+**Exception — `carts`** (owned by B2B Sales): the cart module writes its rows
+there directly, by the user's decision (2026-10-08), always with
+`source: 'vistaar'` and always filtering on `source` + `partner_id`. No index
+is declared in code; the one it needs is in `docs/PROD-CHECKLIST.md`.
+
 ---
 
 ## Collections
 
 | Domain | Collection | Note |
 |---|---|---|
-| — | — | Added with each module, with its indexes. See `docs/DATABASE.md`. |
+| cart | `carts` (shared, `source: 'vistaar'`) | Active cart `_id` derived from `partner_id`. See `docs/DATABASE.md` |
 
 ---
 

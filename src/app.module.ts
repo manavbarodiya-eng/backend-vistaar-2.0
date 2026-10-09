@@ -5,10 +5,12 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
 import { AllExceptionsFilter } from '@core/filters/all-exceptions.filter';
+import { PartnerHeaderGuard } from '@core/guards/partner-header.guard';
 import { EnvelopeInterceptor } from '@core/interceptors/envelope.interceptor';
 import { THROTTLE_OPTIONS } from '@core/throttle/throttle.config';
 import { validateEnv, type Env } from '@config/env.schema';
 import { DatabaseModule } from '@database/database.module';
+import { CartModule } from '@modules/cart/cart.module';
 import { HealthModule } from '@modules/health/health.module';
 
 @Module({
@@ -50,11 +52,14 @@ import { HealthModule } from '@modules/health/health.module';
     // One folder per module under src/modules/, each with the four layers:
     //   controller → service → repository → schema
     HealthModule,
+    CartModule,
   ],
   providers: [
     // The auth guard is registered here, ahead of the throttler, with the
     // login module: the throttler keys on the verified `request.user`, which
-    // only exists once that guard has run.
+    // only exists once that guard has run. Until then `PartnerHeaderGuard`
+    // stands in (off unless TRUST_PARTNER_HEADER=true) — remove it with login.
+    { provide: APP_GUARD, useClass: PartnerHeaderGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

@@ -10,6 +10,10 @@ import { z } from 'zod';
  *
  * Auth (OTP, app tokens, SSO for the HO portal) and the ko-sales lead intake
  * add their variables with the login module.
+ *
+ * `B2B_API_URL` is required, not defaulted: the cart is priced from that
+ * catalogue. There is no B2B token here — B2B tokens belong to signed-in
+ * agents and expire, so each request brings its own.
  */
 
 /** `"true"`/`"false"` strings only — z.coerce.boolean() treats "false" as true. */
@@ -39,6 +43,20 @@ export const envSchema = z.object({
 
   /** Swagger UI at `/docs` is off unless explicitly switched on. */
   SWAGGER_ENABLED: booleanFromString,
+
+  /**
+   * Temporary, until the login module: take the partner id from the
+   * `x-partner-id` header (`PartnerHeaderGuard`). Anyone can claim any id —
+   * never `true` where real partners' data is.
+   */
+  TRUST_PARTNER_HEADER: booleanFromString,
+
+  /** B2B Sales API — the marketplace catalogue every cart line is priced from. */
+  B2B_API_URL: z.url('B2B_API_URL must be a URL'),
+  B2B_MARKETPLACE_CODE: z.string().min(1).default('MKTP-1'),
+
+  /** How long a fetched catalogue counts as fresh before a background refresh. */
+  CATALOG_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 export type Env = z.infer<typeof envSchema>;
