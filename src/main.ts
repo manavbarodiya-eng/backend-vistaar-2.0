@@ -58,15 +58,6 @@ async function bootstrap(): Promise<void> {
       .warn('CORS_ORIGINS is `*` — every browser origin may call this API.');
   }
 
-  if (config.get('TRUST_PARTNER_HEADER', { infer: true })) {
-    app
-      .get(Logger)
-      .warn(
-        'TRUST_PARTNER_HEADER is on — any caller can act as any partner via ' +
-          'x-partner-id. Turn it off once the login module is live.',
-      );
-  }
-
   app.setGlobalPrefix('api');
   // One version, everywhere: `/api/v2/*`, matching the `vistaar_v2_*`
   // collections. A controller that names no version gets this one.

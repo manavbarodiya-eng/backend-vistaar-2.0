@@ -19,7 +19,6 @@ describe('validateEnv', () => {
       MONGODB_DB_NAME: 'CRM-Database',
       CORS_ORIGINS: '',
       SWAGGER_ENABLED: false,
-      TRUST_PARTNER_HEADER: false,
       B2B_MARKETPLACE_CODE: 'MKTP-1',
       CATALOG_CACHE_TTL_SECONDS: 60,
     });

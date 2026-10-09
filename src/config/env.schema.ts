@@ -44,13 +44,6 @@ export const envSchema = z.object({
   /** Swagger UI at `/docs` is off unless explicitly switched on. */
   SWAGGER_ENABLED: booleanFromString,
 
-  /**
-   * Temporary, until the login module: take the partner id from the
-   * `x-partner-id` header (`PartnerHeaderGuard`). Anyone can claim any id —
-   * never `true` where real partners' data is.
-   */
-  TRUST_PARTNER_HEADER: booleanFromString,
-
   /** B2B Sales API — the marketplace catalogue every cart line is priced from. */
   B2B_API_URL: z.url('B2B_API_URL must be a URL'),
   B2B_MARKETPLACE_CODE: z.string().min(1).default('MKTP-1'),

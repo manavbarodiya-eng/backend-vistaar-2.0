@@ -58,7 +58,7 @@ import { HealthModule } from '@modules/health/health.module';
     // The auth guard is registered here, ahead of the throttler, with the
     // login module: the throttler keys on the verified `request.user`, which
     // only exists once that guard has run. Until then `PartnerHeaderGuard`
-    // stands in (off unless TRUST_PARTNER_HEADER=true) — remove it with login.
+    // stands in — remove it with login.
     { provide: APP_GUARD, useClass: PartnerHeaderGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },
