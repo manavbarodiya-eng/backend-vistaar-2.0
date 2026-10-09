@@ -44,6 +44,13 @@ export const envSchema = z.object({
   /** Swagger UI at `/docs` is off unless explicitly switched on. */
   SWAGGER_ENABLED: booleanFromString,
 
+  /** B2B Sales API — the marketplace catalogue every cart line is priced from. */
+  B2B_API_URL: z.url('B2B_API_URL must be a URL'),
+  B2B_MARKETPLACE_CODE: z.string().min(1).default('MKTP-1'),
+
+  /** How long a fetched catalogue counts as fresh before a background refresh. */
+  CATALOG_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+
   // ── Partner sessions (the Vistaar app) ─────────────────────────────────
   /**
    * HS256 key for the partner access token. Partners are not SSO users (they

@@ -7,7 +7,6 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppAuthGuard } from '@core/auth/app-auth.guard';
 import { AuthCoreModule } from '@core/auth/auth-core.module';
 import { AllExceptionsFilter } from '@core/filters/all-exceptions.filter';
-import { PartnerHeaderGuard } from '@core/guards/partner-header.guard';
 import { EnvelopeInterceptor } from '@core/interceptors/envelope.interceptor';
 import { THROTTLE_OPTIONS } from '@core/throttle/throttle.config';
 import { validateEnv, type Env } from '@config/env.schema';
@@ -43,6 +42,7 @@ import { UploadsModule } from '@modules/uploads/uploads.module';
           redact: {
             paths: [
               'req.headers.authorization',
+              'req.headers["x-b2b-token"]',
               'req.headers.cookie',
               'req.body.otp',
               'req.body.refresh_token',

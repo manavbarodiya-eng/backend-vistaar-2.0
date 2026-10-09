@@ -16,7 +16,7 @@ What must exist in production before the matching feature is switched on.
 | `OTP_API_URL` | `https://utils.ko-tech.in` — DLT template for the Vistaar SMS confirmed with the utils owner |
 | `SSO_JWKS_URL` | `https://sso.ko-tech.in/.well-known/jwks.json` |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_STORAGE_BUCKET` | KYC uploads: the org bucket (ko-sales', `micro-dealer.appspot.com`), private objects under `KO-documents/<pii_id>/`, signed URLs on read. Without them `POST /uploads` answers 503 |
-| `B2B_API_URL` | Production B2B Sales API — required, boot fails without it. No token: each request brings the agent's |
+| `B2B_API_URL` | Production B2B Sales API — required, boot fails without it. No token here: each request brings the app's in `x-b2b-token` |
 | `B2B_MARKETPLACE_CODE` | `MKTP-1` unless the partner marketplace changes |
 | `CATALOG_CACHE_TTL_SECONDS` | `60` default |
 
@@ -75,7 +75,7 @@ one routes to a single shard.
 
 ## Cart — before switching on
 
-- [ ] Login module's auth guard live and `PartnerHeaderGuard` deleted — until then any caller can act as any partner via `x-partner-id`
+- [x] Login module's auth guard live and `PartnerHeaderGuard` deleted — the cart reads the partner from the Vistaar token; the B2B token travels in `x-b2b-token`
 - [ ] `carts` index above built
 - [ ] B2B Sales team told `source: 'vistaar'` rows exist in `carts`, and that their own queries must filter on `source`
 
