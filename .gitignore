@@ -57,3 +57,6 @@ desktop.ini
 # Merge artefacts
 *.orig
 *.rej
+
+# pnpm repo — an npm lockfile beside pnpm-lock.yaml lets the two drift apart.
+package-lock.json

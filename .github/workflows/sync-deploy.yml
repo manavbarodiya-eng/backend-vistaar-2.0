@@ -1,0 +1,74 @@
+name: Sync upstream beta → deploy
+
+# Code lands on the upstream repo's beta; Render deploys the fork's beta.
+# Once a day this brings the fork up to upstream — only after the same checks
+# CI runs — and Render's auto-deploy picks up the push.
+
+on:
+  schedule:
+    - cron: '30 3 * * *' # 09:00 IST
+  workflow_dispatch:
+
+concurrency:
+  group: sync-deploy
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: manavbarodiya-eng/backend-vistaar-2.0
+  BRANCH: beta
+
+jobs:
+  sync:
+    # Upstream carries this file too; it must only ever act inside the fork.
+    if: github.repository == 'niteshverma-02/backend-vistaar-2.0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+          # GITHUB_TOKEN may not push commits that touch .github/workflows,
+          # and upstream will change them — hence a PAT with `workflow` scope.
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Fetch upstream
+        id: diff
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM}.git"
+          git fetch upstream "${BRANCH}"
+          up=$(git rev-parse "upstream/${BRANCH}")
+          echo "sha=${up}" >> "$GITHUB_OUTPUT"
+          if [ "$up" = "$(git rev-parse HEAD)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Fork ${BRANCH} already at ${up} — nothing to deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git log --oneline "HEAD..upstream/${BRANCH}"
+          fi
+
+      - if: steps.diff.outputs.changed == 'true'
+        run: git checkout --detach "${{ steps.diff.outputs.sha }}"
+      - if: steps.diff.outputs.changed == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - if: steps.diff.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.diff.outputs.changed == 'true'
+        name: Check upstream before it reaches Render
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm exec eslint "{src,apps,libs,test}/**/*.ts"
+          pnpm test
+          pnpm build
+
+      # A plain push, never forced: if the fork's beta has commits upstream
+      # lacks, this fails loudly instead of throwing them away.
+      - if: steps.diff.outputs.changed == 'true'
+        name: Fast-forward fork beta
+        run: git push origin "${{ steps.diff.outputs.sha }}:refs/heads/${BRANCH}"
