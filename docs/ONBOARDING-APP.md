@@ -93,6 +93,7 @@ against the values entered so far. A hidden required field is not required.
 | `file` | `{ "path": "<from /uploads>" }` | |
 | `document` | `{ "files": ["<path>", …], "number": "ABCDE1234F" }` | KYC document HO verifies; `max_items` files; `number_required` |
 | `location` | `{ "lat": 23.25, "lng": 77.41, "accuracy": 12, "captured_at": "ISO" }` | **device GPS**, India only — always optional (served as `required: false` on every form); without it the nearby-network check is skipped |
+| `location` | `{ "lat": 23.25, "lng": 77.41, "accuracy": 12, "captured_at": "ISO" }` | **device GPS**, India only — optional; without it the nearby-network check is skipped |
 | `object` | `{ "sub_key": value, … }` | sub-fields in `fields` |
 | `object_list` | `[{ … }, { … }]` | repeatable group, `max_items` rows |
 

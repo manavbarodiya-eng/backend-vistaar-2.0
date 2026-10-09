@@ -113,10 +113,14 @@ describe('configErrors', () => {
     expect(configErrors(steps)).toEqual([]);
   });
 
-  it('refuses a required GPS field', () => {
-    expect(configErrors(requiredGps)).toEqual([
-      'steps.1.fields.0: a location (GPS) field cannot be required',
-    ]);
+  it('accepts a form whose GPS field is optional', () => {
+    const optionalGps = steps.map((s) => ({
+      ...s,
+      fields: s.fields.map((f) =>
+        f.type === 'location' ? { ...f, required: false } : f,
+      ),
+    }));
+    expect(configErrors(optionalGps)).toEqual([]);
   });
 
   it('keeps org_document to one document field per key', () => {
