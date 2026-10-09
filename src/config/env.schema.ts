@@ -39,12 +39,73 @@ export const envSchema = z.object({
 
   /** Swagger UI at `/docs` is off unless explicitly switched on. */
   SWAGGER_ENABLED: booleanFromString,
+
+  // ── Partner sessions (the Vistaar app) ─────────────────────────────────
+  /**
+   * HS256 key for the partner access token. Partners are not SSO users (they
+   * sign in with a phone and an OTP), so this service issues their token
+   * itself. Never shared with another service: a partner token must not open
+   * anything outside Vistaar, and an SSO token must not open a partner route.
+   */
+  VISTAAR_JWT_SECRET: z
+    .string()
+    .min(32, 'VISTAAR_JWT_SECRET must be at least 32 characters'),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(300)
+    .max(7 * 24 * 3600)
+    .default(12 * 3600),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(180).default(30),
+
+  // ── OTP (utilities service, MSG91 behind it) ───────────────────────────
+  OTP_API_URL: z.url().default('https://utils.ko-tech.in'),
+  OTP_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  /**
+   * Comma-separated 10-digit numbers that skip the SMS and accept
+   * `OTP_TEST_CODE`, so the app developer can sign in without a phone.
+   * Refused outright in production (see the refinement below).
+   */
+  OTP_TEST_NUMBERS: z.string().default(''),
+  OTP_TEST_CODE: z
+    .string()
+    .regex(/^\d{4,6}$/)
+    .optional(),
+
+  // ── HO portal (SSO) ────────────────────────────────────────────────────
+  /** HO staff use the company SSO token; only its signature is checked here. */
+  SSO_JWKS_URL: z.url().default('https://sso.ko-tech.in/.well-known/jwks.json'),
+  SSO_ISSUER: z.string().min(1).optional(),
+  SSO_AUDIENCE: z.string().min(1).optional(),
+
+  // ── KYC uploads (Firebase Storage, private objects) ────────────────────
+  /**
+   * Optional so a fresh environment still boots; without all four,
+   * `POST /uploads` answers 503 `UPLOADS_NOT_CONFIGURED`. The private key is
+   * the service-account JSON's `private_key`, newlines written as `\n`.
+   */
+  FIREBASE_PROJECT_ID: z.string().min(1).optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().min(1).optional(),
+  FIREBASE_PRIVATE_KEY: z.string().min(1).optional(),
+  FIREBASE_STORAGE_BUCKET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Test numbers are a back door by design, so they may exist only where no
+ * real partner signs in.
+ */
+const refinedEnvSchema = envSchema.refine(
+  (env) => env.NODE_ENV !== 'production' || env.OTP_TEST_NUMBERS.trim() === '',
+  {
+    message: 'OTP_TEST_NUMBERS must be empty in production',
+    path: ['OTP_TEST_NUMBERS'],
+  },
+);
+
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const parsed = envSchema.safeParse(raw);
+  const parsed = refinedEnvSchema.safeParse(raw);
 
   if (!parsed.success) {
     const issues = parsed.error.issues

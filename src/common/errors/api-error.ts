@@ -14,7 +14,49 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  *
  * Add a code here, in the module's section, when a feature needs one.
  */
-export const API_ERROR_CODES = ['VALIDATION_FAILED', 'NOT_FOUND'] as const;
+export const API_ERROR_CODES = [
+  'VALIDATION_FAILED',
+  'NOT_FOUND',
+  // Login. `OTP_LIMIT` is a 429: the app shows a wait, never a retry loop.
+  'INVALID_PHONE',
+  'OTP_NOT_REQUESTED',
+  'OTP_INVALID',
+  'OTP_LIMIT',
+  'OTP_UNAVAILABLE',
+  'IDENTITY_UNAVAILABLE',
+  'ACCOUNT_BLOCKED',
+  'SESSION_INVALID',
+  // Stages. Every stage move is conditional on the stage it starts from.
+  'STAGE_NOT_ALLOWED',
+  'STAGE_CHANGED',
+  // Onboarding.
+  'COHORT_REQUIRED',
+  'COHORT_NOT_FOUND',
+  'CONFIG_NOT_PUBLISHED',
+  'ONBOARDING_LOCKED',
+  'UNKNOWN_FIELD',
+  'FIELD_NOT_EDITABLE',
+  'REQUIRED_FIELDS_MISSING',
+  'VERSION_CONFLICT',
+  // KYC review.
+  'NOT_A_DOCUMENT',
+  'DOCUMENT_MISSING',
+  'DOCUMENTS_NOT_VERIFIED',
+  // Config and cohorts (HO).
+  'CONFIG_INVALID',
+  'NO_DRAFT',
+  'COHORT_EXISTS',
+  'COHORT_IN_USE',
+  // HO access.
+  'NO_ADMIN_ACCESS',
+  'ROLE_NOT_ALLOWED',
+  'OWNER_NOT_FOUND',
+  // Uploads.
+  'UPLOADS_NOT_CONFIGURED',
+  'FILE_REQUIRED',
+  'FILE_TOO_LARGE',
+  'FILE_TYPE_NOT_ALLOWED',
+] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
@@ -84,6 +126,26 @@ export const forbidden = (
 
 export const notFound = (message: string, details?: string[]): HttpException =>
   apiError(HttpStatus.NOT_FOUND, 'NOT_FOUND', message, details);
+
+export const unauthorized = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException => apiError(HttpStatus.UNAUTHORIZED, code, message, details);
+
+export const tooMany = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException =>
+  apiError(HttpStatus.TOO_MANY_REQUESTS, code, message, details);
+
+export const unavailable = (
+  code: ApiErrorCode,
+  message: string,
+  details?: string[],
+): HttpException =>
+  apiError(HttpStatus.SERVICE_UNAVAILABLE, code, message, details);
 
 export const conflict = (
   code: ApiErrorCode,
