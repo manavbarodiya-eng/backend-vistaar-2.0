@@ -1,0 +1,726 @@
+import { HttpStatus, Injectable } from '@nestjs/common';
+import type { UpdateQuery } from 'mongoose';
+
+import { apiError, badRequest, conflict } from '@common/errors/api-error';
+import type { GeoPoint } from '@common/utils/geo.util';
+import { PARTNER_EDITABLE } from '@modules/agents/agents.domain';
+import {
+  AgentsService,
+  type AgentRecord,
+} from '@modules/agents/services/agents.service';
+import { PiiService } from '@modules/spine/services/pii.service';
+import { StorageService } from '@modules/uploads/services/storage.service';
+
+import {
+  checkValue,
+  documentKeys,
+  fieldIndex,
+  filePaths,
+  locationOf,
+  mapProfile,
+  missingRequired,
+  previewOf,
+  progress,
+  requiredDocuments,
+  withUrls,
+  type RawData,
+  type StepDef,
+} from '../form.domain';
+import { OnboardingRepository } from '../repositories/onboarding.repository';
+import type { OnboardingConfig } from '../schemas/onboarding-config.schema';
+import type {
+  AdminEdit,
+  DocumentReview,
+  OnboardingData,
+  OnboardingDataDocument,
+} from '../schemas/onboarding-data.schema';
+import { CohortsService } from './cohorts.service';
+import { ConfigsService } from './configs.service';
+
+const MAX_KEYS_PER_SAVE = 100;
+const MAX_RETRIES = 3;
+
+export interface OnboardingView {
+  onboarding_id: string;
+  cohort: string;
+  config_id: string;
+  config_version: number;
+  stage: string;
+  /** null — every field may be written; a list — only these (changes requested). */
+  editable_fields: string[] | null;
+  raw_data: RawData;
+  current_step: string | null;
+  completed_steps: string[];
+  completion_pct: number;
+  missing_required: string[];
+  documents_review: Record<string, Omit<DocumentReview, 'sig'>>;
+  remarks: Record<string, string>;
+  submitted_at: Date | null;
+  submit_count: number;
+  updated_at: Date;
+}
+
+export interface DeskOnboardingView extends OnboardingView {
+  steps: StepDef[];
+  updated_data: AdminEdit[];
+  location: GeoPoint | null;
+}
+
+type Changes = { sets: RawData; unsets: string[] };
+
+/**
+ * `vistar_onboarding_data`: the partner fills it step by step (any number of
+ * saves), submits it, HO reviews each KYC document and decides. The partner
+ * record's stage moves through `AgentsService`; this service owns the data.
+ */
+@Injectable()
+export class OnboardingService {
+  constructor(
+    private readonly onboarding: OnboardingRepository,
+    private readonly configs: ConfigsService,
+    private readonly cohorts: CohortsService,
+    private readonly agents: AgentsService,
+    private readonly storage: StorageService,
+    private readonly piis: PiiService,
+  ) {}
+
+  // ── Partner ───────────────────────────────────────────────────────────
+
+  async mine(agentRef: string): Promise<OnboardingView | null> {
+    const [agent, doc] = await Promise.all([
+      this.agents.require(agentRef),
+      this.onboarding.findByAgent(agentRef),
+    ]);
+    if (!doc) return null;
+    return this.view(
+      agent,
+      doc,
+      await this.configs.version(doc.cohort, doc.config_version),
+    );
+  }
+
+  /**
+   * One save of any number of fields. The first call needs `cohort` and
+   * creates the record. Each key is written on its own (`raw_data.<key>`), so
+   * two steps saved close together never overwrite each other.
+   */
+  async save(
+    agentRef: string,
+    input: { cohort?: string; step_id?: string; data: Record<string, unknown> },
+  ): Promise<OnboardingView> {
+    let agent = await this.agents.require(agentRef);
+    this.assertPartnerCanEdit(agent);
+    if (Object.keys(input.data).length > MAX_KEYS_PER_SAVE) {
+      throw badRequest(
+        'VALIDATION_FAILED',
+        `Save at most ${MAX_KEYS_PER_SAVE} fields at a time.`,
+      );
+    }
+
+    let doc = await this.onboarding.findByAgent(agent._id);
+    let config: OnboardingConfig;
+    if (!doc) {
+      if (!input.cohort)
+        throw badRequest('COHORT_REQUIRED', 'Choose your partner type first.');
+      await this.cohorts.require(input.cohort);
+      config = await this.configs.requirePublished(input.cohort);
+      doc = await this.onboarding.create({
+        agent_ref: agent._id,
+        agent_id: agent.agent_id as string,
+        pii_id: agent.pii_id as string,
+        cohort: config.cohort,
+        config_id: config._id,
+        config_version: config.version,
+      });
+      await this.agents.linkOnboarding(agent._id, doc._id);
+    } else {
+      ({ doc, config } = await this.repinIfAllowed(agent, doc, input.cohort));
+    }
+
+    if (agent.stage === 'signed_up')
+      agent = await this.agents.move(agent, 'start_onboarding', 'self');
+
+    const editable = this.editableKeys(agent, doc);
+    const changes = this.check(
+      config.steps,
+      input.data,
+      agent.pii_id as string,
+      editable,
+    );
+    doc = await this.apply(doc, config, changes, {
+      by: 'self',
+      ...(input.step_id ? { current_step: input.step_id } : {}),
+    });
+    await this.refreshPreview(agent, doc, config);
+    return this.view(agent, doc, config);
+  }
+
+  /** Complete and lock the form; every KYC document goes to HO for review. */
+  async submit(agentRef: string): Promise<OnboardingView> {
+    const agent = await this.agents.require(agentRef);
+    if (agent.stage !== 'onboarding' && agent.stage !== 'changes_requested') {
+      if (agent.stage === 'signed_up')
+        throw badRequest('COHORT_REQUIRED', 'Fill the form before submitting.');
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'ONBOARDING_LOCKED',
+        'Your application is already submitted.',
+      );
+    }
+    const doc = await this.requireDoc(agent);
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+
+    const missing = missingRequired(config.steps, doc.raw_data);
+    if (missing.length) {
+      throw badRequest(
+        'REQUIRED_FIELDS_MISSING',
+        'Some required fields are empty.',
+        missing,
+      );
+    }
+
+    const updated = await this.withRetry(doc, (current) => ({
+      $set: {
+        documents_review: this.reviewForSubmit(config.steps, current),
+        remarks: {},
+        submitted_at: new Date(),
+        updated_by: 'self',
+      },
+      $inc: { submit_count: 1 },
+    }));
+
+    const moved = await this.agents.move(agent, 'submit', 'self');
+    await this.refreshPreview(moved, updated, config);
+    return this.view(moved, updated, config);
+  }
+
+  // ── HO desk ───────────────────────────────────────────────────────────
+
+  async forDesk(agent: AgentRecord): Promise<DeskOnboardingView | null> {
+    const doc = await this.onboarding.findByAgent(agent._id);
+    if (!doc) return null;
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+    const base = await this.view(agent, doc, config, null);
+    return {
+      ...base,
+      steps: config.steps,
+      updated_data: doc.updated_data ?? [],
+      location: doc.location ?? null,
+    };
+  }
+
+  /** HO corrects values on the partner's behalf; every change is audited. */
+  async deskEdit(
+    agent: AgentRecord,
+    data: Record<string, unknown>,
+    by: string,
+  ): Promise<DeskOnboardingView> {
+    if (
+      !['onboarding', 'kyc_review', 'changes_requested'].includes(agent.stage)
+    ) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'STAGE_NOT_ALLOWED',
+        `Cannot edit a partner who is ${agent.stage}.`,
+      );
+    }
+    const doc = await this.requireDoc(agent);
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+    const changes = this.check(
+      config.steps,
+      data,
+      agent.pii_id as string,
+      null,
+    );
+    const at = new Date();
+    const audit: AdminEdit[] = [
+      ...Object.entries(changes.sets).map(([field, value]) => ({
+        field,
+        old_value: doc.raw_data[field] ?? null,
+        new_value: value,
+        by,
+        at,
+      })),
+      ...changes.unsets.map((field) => ({
+        field,
+        old_value: doc.raw_data[field] ?? null,
+        new_value: null,
+        by,
+        at,
+      })),
+    ];
+    // A document HO changed is no longer the one that was reviewed.
+    const reopen = [...Object.keys(changes.sets), ...changes.unsets].filter(
+      (k) => doc.documents_review?.[k],
+    );
+    const updated = await this.apply(doc, config, changes, {
+      by,
+      audit,
+      reopenReviews: reopen,
+    });
+    await this.refreshPreview(agent, updated, config);
+    return (await this.forDesk(agent)) as DeskOnboardingView;
+  }
+
+  async reviewDocument(
+    agent: AgentRecord,
+    key: string,
+    decision: 'verified' | 'rejected',
+    reason: string | undefined,
+    by: string,
+  ): Promise<DeskOnboardingView> {
+    if (agent.stage !== 'kyc_review') {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'STAGE_NOT_ALLOWED',
+        'Documents are reviewed only while the application is in KYC review.',
+      );
+    }
+    if (decision === 'rejected' && !reason?.trim()) {
+      throw badRequest(
+        'VALIDATION_FAILED',
+        'Say why the document is rejected.',
+        ['reason is required to reject'],
+      );
+    }
+    const doc = await this.requireDoc(agent);
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+    const field = fieldIndex(config.steps).get(key);
+    if (field?.type !== 'document')
+      throw badRequest(
+        'NOT_A_DOCUMENT',
+        `"${key}" is not a KYC document on this form.`,
+      );
+    const value = doc.raw_data[key];
+    if (value === undefined || value === null)
+      throw badRequest(
+        'DOCUMENT_MISSING',
+        `The partner has not uploaded "${key}".`,
+      );
+
+    const entry: DocumentReview = {
+      status: decision,
+      reason: decision === 'rejected' ? (reason as string).trim() : null,
+      by,
+      at: new Date(),
+      sig: JSON.stringify(value),
+    };
+    await this.withRetry(doc, () => ({
+      $set: { [`documents_review.${key}`]: entry, updated_by: by },
+    }));
+    if (field.org_document) {
+      await this.mirrorToPii(
+        agent.pii_id as string,
+        field.org_document,
+        decision,
+        value,
+      );
+    }
+    return (await this.forDesk(agent)) as DeskOnboardingView;
+  }
+
+  /** The org copy on `piis.documents`, in ko-sales' entry shape. */
+  private mirrorToPii(
+    piiId: string,
+    type: string,
+    decision: 'verified' | 'rejected',
+    value: unknown,
+  ): Promise<void> {
+    if (decision === 'rejected') return this.piis.unverifyDocument(piiId, type);
+    const { files = [], number } = value as {
+      files?: string[];
+      number?: string;
+    };
+    const [image, backImage] = files.map((path) => this.storage.urlOf(path));
+    return this.piis.recordVerifiedDocument(piiId, type, {
+      id: number ?? null,
+      image: image ?? null,
+      ...(backImage ? { back_image: backImage } : {}),
+    });
+  }
+
+  /** Back to the partner with a note per field; rejected documents are included automatically. */
+  async requestChanges(
+    agent: AgentRecord,
+    remarks: Record<string, string>,
+    by: string,
+  ): Promise<AgentRecord> {
+    if (agent.stage !== 'kyc_review') {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'STAGE_NOT_ALLOWED',
+        'Changes can be requested only during KYC review.',
+      );
+    }
+    const doc = await this.requireDoc(agent);
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+    const fields = fieldIndex(config.steps);
+    const notes: Record<string, string> = {};
+    for (const [key, note] of Object.entries(remarks)) {
+      if (!fields.has(key))
+        throw badRequest(
+          'UNKNOWN_FIELD',
+          `"${key}" is not a field of this form.`,
+        );
+      if (typeof note !== 'string' || !note.trim())
+        throw badRequest('VALIDATION_FAILED', `Write a note for "${key}".`);
+      notes[key] = note.trim().slice(0, 300);
+    }
+    for (const [key, review] of Object.entries(doc.documents_review ?? {})) {
+      if (review.status === 'rejected' && !notes[key])
+        notes[key] = review.reason ?? 'Please upload this document again.';
+    }
+    if (Object.keys(notes).length === 0) {
+      throw badRequest(
+        'VALIDATION_FAILED',
+        'Name at least one field to change, or reject a document first.',
+      );
+    }
+    await this.withRetry(doc, () => ({
+      $set: { remarks: notes, updated_by: by },
+    }));
+    return this.agents.move(agent, 'request_changes', by, {
+      reason: `${Object.keys(notes).length} field(s) to fix`,
+    });
+  }
+
+  /** Every required KYC document verified → map the form onto the partner and approve. */
+  async approve(agent: AgentRecord, by: string): Promise<AgentRecord> {
+    if (agent.stage !== 'kyc_review') {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'STAGE_NOT_ALLOWED',
+        'Only an application in KYC review can be approved.',
+      );
+    }
+    const doc = await this.requireDoc(agent);
+    const config = await this.configs.version(doc.cohort, doc.config_version);
+    const pending = requiredDocuments(config.steps, doc.raw_data).filter(
+      (k) => doc.documents_review?.[k]?.status !== 'verified',
+    );
+    if (pending.length) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'DOCUMENTS_NOT_VERIFIED',
+        'Verify every required document first.',
+        pending,
+      );
+    }
+    const { profile, location } = mapProfile(config.steps, doc.raw_data);
+    return this.agents.approve(agent, by, profile, location);
+  }
+
+  async progressFor(
+    agentRefs: string[],
+  ): Promise<
+    Map<string, { completion_pct: number; submitted_at: Date | null }>
+  > {
+    const rows = await this.onboarding.progressFor(agentRefs);
+    return new Map(
+      rows.map((r) => [
+        r.agent_ref,
+        { completion_pct: r.completion_pct, submitted_at: r.submitted_at },
+      ]),
+    );
+  }
+
+  nearby(
+    point: GeoPoint,
+    radiusKm: number,
+    excludeAgentRef: string,
+    limit: number,
+  ): Promise<OnboardingData[]> {
+    return this.onboarding.near(point, radiusKm, excludeAgentRef, limit);
+  }
+
+  // ── internals ─────────────────────────────────────────────────────────
+
+  private assertPartnerCanEdit(agent: AgentRecord): void {
+    if (agent.stage === 'blocked' || !agent.is_active) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'ACCOUNT_BLOCKED',
+        'This account is blocked.',
+      );
+    }
+    if (!PARTNER_EDITABLE.has(agent.stage)) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'ONBOARDING_LOCKED',
+        'Your application is with Katyayani for review.',
+      );
+    }
+  }
+
+  private async requireDoc(agent: AgentRecord): Promise<OnboardingData> {
+    const doc = await this.onboarding.findByAgent(agent._id);
+    if (!doc)
+      throw badRequest(
+        'COHORT_REQUIRED',
+        'This partner has not started onboarding.',
+      );
+    return doc;
+  }
+
+  /** While changes are requested, only the flagged fields and rejected documents may change. */
+  private editableKeys(
+    agent: AgentRecord,
+    doc: OnboardingData,
+  ): Set<string> | null {
+    if (agent.stage !== 'changes_requested') return null;
+    const keys = new Set(Object.keys(doc.remarks ?? {}));
+    for (const [key, review] of Object.entries(doc.documents_review ?? {})) {
+      if (review.status === 'rejected') keys.add(key);
+    }
+    return keys;
+  }
+
+  /**
+   * Before the first submit the form follows the latest published version
+   * (and the partner may still switch cohort); values for fields the new
+   * version does not have are dropped. After a submit the version is fixed —
+   * HO reviewed against it.
+   */
+  private async repinIfAllowed(
+    agent: AgentRecord,
+    doc: OnboardingData,
+    cohort: string | undefined,
+  ): Promise<{ doc: OnboardingData; config: OnboardingConfig }> {
+    const pinned = await this.configs.version(doc.cohort, doc.config_version);
+    const switching = !!cohort && cohort !== doc.cohort;
+    if (doc.submit_count > 0 || agent.stage === 'changes_requested') {
+      if (switching) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'ONBOARDING_LOCKED',
+          'The partner type cannot change after submitting.',
+        );
+      }
+      return { doc, config: pinned };
+    }
+
+    let target = pinned;
+    if (switching) {
+      await this.cohorts.require(cohort);
+      target = await this.configs.requirePublished(cohort);
+    } else {
+      const latest = await this.configs.published(doc.cohort);
+      if (latest && latest.version > doc.config_version) target = latest;
+    }
+    if (target._id === doc.config_id) return { doc, config: pinned };
+
+    const fields = fieldIndex(target.steps);
+    const kept = Object.fromEntries(
+      Object.entries(doc.raw_data).filter(([k]) => fields.has(k)),
+    );
+    const updated = await this.withRetry(doc, () => ({
+      $set: {
+        cohort: target.cohort,
+        config_id: target._id,
+        config_version: target.version,
+        raw_data: kept,
+        ...progress(target.steps, kept),
+        ...this.locationUpdate(target.steps, kept),
+      },
+    }));
+    return { doc: updated, config: target };
+  }
+
+  private check(
+    steps: StepDef[],
+    data: Record<string, unknown>,
+    piiId: string,
+    editable: Set<string> | null,
+  ): Changes {
+    const fields = fieldIndex(steps);
+    const unknown: string[] = [];
+    const locked: string[] = [];
+    const errors: string[] = [];
+    const changes: Changes = { sets: {}, unsets: [] };
+
+    for (const [key, value] of Object.entries(data)) {
+      const field = fields.get(key);
+      if (!field) {
+        unknown.push(key);
+        continue;
+      }
+      if (editable && !editable.has(key)) {
+        locked.push(key);
+        continue;
+      }
+      if (value === null || value === undefined) {
+        changes.unsets.push(key);
+        continue;
+      }
+      const checked = checkValue(field, value, { piiId });
+      if (checked.ok) changes.sets[key] = checked.value;
+      else errors.push(checked.error);
+    }
+
+    if (unknown.length)
+      throw badRequest(
+        'UNKNOWN_FIELD',
+        'Some fields are not on this form.',
+        unknown,
+      );
+    if (locked.length) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'FIELD_NOT_EDITABLE',
+        'Only the fields Katyayani asked about can change now.',
+        locked,
+      );
+    }
+    if (errors.length)
+      throw badRequest(
+        'VALIDATION_FAILED',
+        'Some values are not valid.',
+        errors,
+      );
+    return changes;
+  }
+
+  /** One atomic write of the changed keys plus the recomputed progress. */
+  private apply(
+    doc: OnboardingData,
+    config: OnboardingConfig,
+    changes: Changes,
+    meta: {
+      by: string;
+      current_step?: string;
+      audit?: AdminEdit[];
+      reopenReviews?: string[];
+    },
+  ): Promise<OnboardingData> {
+    return this.withRetry(doc, (current) => {
+      const merged: RawData = { ...current.raw_data, ...changes.sets };
+      for (const key of changes.unsets) delete merged[key];
+
+      const $set: Record<string, unknown> = {
+        ...progress(config.steps, merged),
+        updated_by: meta.by,
+        ...(meta.current_step ? { current_step: meta.current_step } : {}),
+      };
+      const $unset: Record<string, ''> = {};
+      for (const [key, value] of Object.entries(changes.sets))
+        $set[`raw_data.${key}`] = value;
+      for (const key of changes.unsets) $unset[`raw_data.${key}`] = '';
+      for (const key of meta.reopenReviews ?? []) {
+        $set[`documents_review.${key}.status`] = 'pending';
+        $set[`documents_review.${key}.reason`] = null;
+      }
+      const location = locationOf(config.steps, merged);
+      if (location) $set.location = location;
+      else $unset.location = '';
+
+      const update: UpdateQuery<OnboardingDataDocument> = { $set };
+      if (Object.keys($unset).length) update.$unset = $unset;
+      if (meta.audit?.length)
+        update.$push = { updated_data: { $each: meta.audit, $slice: -200 } };
+      return update;
+    });
+  }
+
+  /** Optimistic write: retried against a fresh read if another write landed first. */
+  private async withRetry(
+    doc: OnboardingData,
+    build: (current: OnboardingData) => UpdateQuery<OnboardingDataDocument>,
+  ): Promise<OnboardingData> {
+    let current = doc;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const updated = await this.onboarding.updateIfVersion(
+        current._id,
+        current.version,
+        build(current),
+      );
+      if (updated) return updated;
+      const fresh = await this.onboarding.findByAgent(current.agent_ref);
+      if (!fresh) break;
+      current = fresh;
+    }
+    throw conflict(
+      'VERSION_CONFLICT',
+      'The form was changed at the same time. Please try again.',
+    );
+  }
+
+  private locationUpdate(
+    steps: StepDef[],
+    raw: RawData,
+  ): { location?: GeoPoint } {
+    const location = locationOf(steps, raw);
+    return location ? { location } : {};
+  }
+
+  /**
+   * Review states on submit: a document unchanged since HO verified it stays
+   * verified; anything new or changed is pending; removed documents drop out.
+   */
+  private reviewForSubmit(
+    steps: StepDef[],
+    doc: OnboardingData,
+  ): Record<string, DocumentReview> {
+    const review: Record<string, DocumentReview> = {};
+    for (const key of documentKeys(steps)) {
+      const value = doc.raw_data[key];
+      if (value === undefined || value === null) continue;
+      const sig = JSON.stringify(value);
+      const previous = doc.documents_review?.[key];
+      review[key] =
+        previous && previous.sig === sig && previous.status === 'verified'
+          ? previous
+          : { status: 'pending', reason: null, by: null, at: null, sig };
+    }
+    return review;
+  }
+
+  private async refreshPreview(
+    agent: AgentRecord,
+    doc: OnboardingData,
+    config: OnboardingConfig,
+  ): Promise<void> {
+    const preview = previewOf(config.steps, doc.raw_data);
+    if (
+      agent.cohort === doc.cohort &&
+      JSON.stringify(agent.preview ?? {}) === JSON.stringify(preview)
+    )
+      return;
+    await this.agents.setPreview(agent._id, doc.cohort, preview);
+  }
+
+  private async view(
+    agent: AgentRecord,
+    doc: OnboardingData,
+    config: OnboardingConfig,
+    editable: Set<string> | null = this.editableKeys(agent, doc),
+  ): Promise<OnboardingView> {
+    const urls = await this.storage.sign(filePaths(config.steps, doc.raw_data));
+    const review = Object.fromEntries(
+      Object.entries(doc.documents_review ?? {}).map(
+        ([k, { sig: _sig, ...rest }]) => [k, rest],
+      ),
+    );
+    return {
+      onboarding_id: doc._id,
+      cohort: doc.cohort,
+      config_id: doc.config_id,
+      config_version: doc.config_version,
+      stage: agent.stage,
+      editable_fields: editable
+        ? [...editable]
+        : PARTNER_EDITABLE.has(agent.stage)
+          ? null
+          : [],
+      raw_data: withUrls(config.steps, doc.raw_data, urls),
+      current_step: doc.current_step,
+      completed_steps: doc.completed_steps,
+      completion_pct: doc.completion_pct,
+      missing_required: missingRequired(config.steps, doc.raw_data),
+      documents_review: review,
+      remarks: doc.remarks ?? {},
+      submitted_at: doc.submitted_at,
+      submit_count: doc.submit_count,
+      updated_at: doc.updated_at,
+    };
+  }
+}

@@ -8,6 +8,9 @@ Contract docs, one per feature, named by who reads them:
 
 | Doc | For | What |
 |---|---|---|
+| [AUTH-APP.md](./AUTH-APP.md) | app | Phone + OTP login, sessions, `GET /me` status screen |
+| [ONBOARDING-APP.md](./ONBOARDING-APP.md) | app | Dynamic onboarding form, saves, uploads, submit |
+| [ONBOARDING-HO.md](./ONBOARDING-HO.md) | HO portal | Access, pipeline, KYC review, approval, form editor, settings |
 | [DATABASE.md](./DATABASE.md) | both | Every collection this service reads or writes |
 | [PROD-CHECKLIST.md](./PROD-CHECKLIST.md) | backend | What must exist in production before a feature goes live |
 

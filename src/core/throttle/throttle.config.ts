@@ -25,9 +25,10 @@ export function throttleTracker(request: {
 function verifiedSubject(user: unknown): string | null {
   if (typeof user !== 'object' || user === null) return null;
 
-  const { sub } = user as { sub?: unknown };
+  const { sub, email } = user as { sub?: unknown; email?: unknown };
+  const id = typeof sub === 'string' ? sub : email;
 
-  return typeof sub === 'string' && sub.length > 0 ? sub : null;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
 /** Per route, per tracker. */

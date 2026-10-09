@@ -1,0 +1,283 @@
+import { randomUUID } from 'node:crypto';
+
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, mongo, type QueryFilter, type UpdateQuery } from 'mongoose';
+
+import { kmToRadians, type GeoPoint } from '@common/utils/geo.util';
+
+import type { Stage } from '../agents.domain';
+import {
+  Agent,
+  type AgentDocument,
+  type AgentPreview,
+  type StageHistoryEntry,
+} from '../schemas/agent.schema';
+
+export type AgentRecord = Agent;
+
+export interface AgentListFilter {
+  stage?: Stage;
+  cohort?: string;
+  state?: string;
+  district?: string;
+  owner_agent_id?: string;
+  /** Name (preview), phone prefix, `VST-` id or `PII-` id. */
+  q?: string;
+  from?: Date;
+  to?: Date;
+  /** Unverified numbers are noise for the desk; shown only when asked. */
+  include_unverified?: boolean;
+}
+
+const isDuplicateKey = (error: unknown): boolean =>
+  error instanceof mongo.MongoServerError && error.code === 11000;
+
+const escapeRegex = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+@Injectable()
+export class AgentRepository {
+  constructor(
+    @InjectModel(Agent.name) private readonly model: Model<AgentDocument>,
+  ) {}
+
+  /** The record an OTP request lands on — created once per number, then reused. */
+  async upsertForOtp(phone: string, countryCode: string): Promise<AgentRecord> {
+    const filter = { phone, country_code: countryCode };
+    try {
+      return await this.model
+        .findOneAndUpdate(
+          filter,
+          {
+            $setOnInsert: {
+              _id: randomUUID(),
+              phone,
+              country_code: countryCode,
+            },
+          },
+          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+        )
+        .lean<AgentRecord>()
+        .exec();
+    } catch (error) {
+      // Two OTP requests for a new number in the same instant: one inserted.
+      if (!isDuplicateKey(error)) throw error;
+      const existing = await this.findByPhone(phone, countryCode);
+      if (!existing) throw error;
+      return existing;
+    }
+  }
+
+  findByPhone(phone: string, countryCode: string): Promise<AgentRecord | null> {
+    return this.model
+      .findOne({ phone, country_code: countryCode })
+      .lean<AgentRecord | null>()
+      .exec();
+  }
+
+  findById(id: string): Promise<AgentRecord | null> {
+    return this.model.findById(id).lean<AgentRecord | null>().exec();
+  }
+
+  findByAgentId(agentId: string): Promise<AgentRecord | null> {
+    return this.model
+      .findOne({ agent_id: agentId })
+      .lean<AgentRecord | null>()
+      .exec();
+  }
+
+  /** Conditional on `otp_verified: false`, so only the first verify writes ids. */
+  completeVerification(
+    id: string,
+    set: {
+      agent_id: string;
+      pii_id: string;
+      owner_agent_id: string | null;
+      at: Date;
+    },
+  ): Promise<AgentRecord | null> {
+    const entry: StageHistoryEntry = {
+      from: null,
+      to: 'signed_up',
+      by: 'self',
+      at: set.at,
+      reason: 'otp_verified',
+    };
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, otp_verified: false },
+        {
+          $set: {
+            otp_verified: true,
+            otp_verified_at: set.at,
+            last_login_at: set.at,
+            agent_id: set.agent_id,
+            pii_id: set.pii_id,
+            owner_agent_id: set.owner_agent_id,
+          },
+          $push: { stage_history: entry },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean<AgentRecord | null>()
+      .exec();
+  }
+
+  async touchLogin(id: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { _id: id },
+        { $set: { last_login_at: new Date() } },
+        { timestamps: false },
+      )
+      .exec();
+  }
+
+  /**
+   * Moves the stage only if it still is one of `from` — the guard against two
+   * desk users deciding the same partner at once. `null` when it was not.
+   */
+  transition(
+    id: string,
+    from: readonly Stage[],
+    entry: StageHistoryEntry,
+    set: Record<string, unknown> = {},
+  ): Promise<AgentRecord | null> {
+    const update: UpdateQuery<AgentDocument> = {
+      $set: { ...set, stage: entry.to, updated_by: entry.by },
+      $push: { stage_history: entry },
+    };
+    return this.model
+      .findOneAndUpdate({ _id: id, stage: { $in: from } }, update, {
+        returnDocument: 'after',
+      })
+      .lean<AgentRecord | null>()
+      .exec();
+  }
+
+  async linkOnboarding(id: string, onboardingId: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { _id: id, onboarding_id: null },
+        { $set: { onboarding_id: onboardingId } },
+      )
+      .exec();
+  }
+
+  async setPreview(
+    id: string,
+    cohort: string,
+    preview: AgentPreview,
+  ): Promise<void> {
+    await this.model
+      .updateOne({ _id: id }, { $set: { cohort, preview } })
+      .exec();
+  }
+
+  setOwner(
+    id: string,
+    ownerAgentId: string,
+    by: string,
+  ): Promise<AgentRecord | null> {
+    return this.model
+      .findOneAndUpdate(
+        { _id: id },
+        { $set: { owner_agent_id: ownerAgentId, updated_by: by } },
+        { returnDocument: 'after' },
+      )
+      .lean<AgentRecord | null>()
+      .exec();
+  }
+
+  async list(
+    filter: AgentListFilter,
+    page: { skip: number; limit: number; sort: Record<string, 1 | -1> },
+  ): Promise<{ items: AgentRecord[]; total: number }> {
+    const query = this.toQuery(filter);
+    const [items, total] = await Promise.all([
+      this.model
+        .find(query)
+        .select('-stage_history')
+        .sort({ ...page.sort, _id: 1 })
+        .skip(page.skip)
+        .limit(page.limit)
+        .lean<AgentRecord[]>()
+        .exec(),
+      this.model.countDocuments(query).exec(),
+    ]);
+    return { items, total };
+  }
+
+  /** One pass for every tab's count. */
+  async countByStage(): Promise<
+    { stage: Stage; verified: boolean; count: number }[]
+  > {
+    const rows = await this.model
+      .aggregate<{ _id: { stage: Stage; verified: boolean }; count: number }>([
+        {
+          $group: {
+            _id: { stage: '$stage', verified: '$otp_verified' },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .exec();
+    return rows.map((r) => ({
+      stage: r._id.stage,
+      verified: r._id.verified,
+      count: r.count,
+    }));
+  }
+
+  /** Partners with a location inside the radius. `$geoWithin` needs no index. */
+  near(
+    point: GeoPoint,
+    radiusKm: number,
+    excludeId: string,
+    limit: number,
+  ): Promise<AgentRecord[]> {
+    return this.model
+      .find({
+        _id: { $ne: excludeId },
+        location: {
+          $geoWithin: {
+            $centerSphere: [point.coordinates, kmToRadians(radiusKm)],
+          },
+        },
+      })
+      .select('agent_id stage preview profile location')
+      .limit(limit)
+      .lean<AgentRecord[]>()
+      .exec();
+  }
+
+  private toQuery(filter: AgentListFilter): QueryFilter<AgentDocument> {
+    const query: Record<string, unknown> = {};
+    if (!filter.include_unverified) query.otp_verified = true;
+    if (filter.stage) query.stage = filter.stage;
+    if (filter.cohort) query.cohort = filter.cohort;
+    if (filter.owner_agent_id) query.owner_agent_id = filter.owner_agent_id;
+    if (filter.state) query['preview.state'] = filter.state.toUpperCase();
+    if (filter.district)
+      query['preview.district'] = new RegExp(
+        `^${escapeRegex(filter.district)}$`,
+        'i',
+      );
+    if (filter.from || filter.to) {
+      query.created_at = {
+        ...(filter.from ? { $gte: filter.from } : {}),
+        ...(filter.to ? { $lte: filter.to } : {}),
+      };
+    }
+    const q = filter.q?.trim();
+    if (q) {
+      const upper = q.toUpperCase();
+      if (/^VST-\d+$/.test(upper)) query.agent_id = upper;
+      else if (/^PII-\d+$/.test(upper)) query.pii_id = upper;
+      else if (/^\d{3,10}$/.test(q)) query.phone = new RegExp(`^${q}`);
+      else query['preview.name'] = new RegExp(escapeRegex(q), 'i');
+    }
+    return query;
+  }
+}

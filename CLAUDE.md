@@ -8,8 +8,8 @@ The old Vistaar (KSS app + `CRM-Backend`) keeps running on its own collections
 
 **The database is shared production data.** `CRM-Database` is used by ko-sales,
 Stockship, prasar, franchise and others. Read anything; write only our own
-`vistaar_v2_*` collections, and the shared identity records only through
-ko-sales (see *Shared records* below).
+`vistaar_v2_*` collections, plus a new person and verified KYC documents on
+`piis` (see *Shared records*).
 
 Conventions follow `prasar-backend` (`CLAUDE.md` on its `beta` branch) and
 `franchise-offline-hub`, so the HO portal can talk to all three the same way.
@@ -103,16 +103,26 @@ aggregations for HO screens go in a `<x>.query-service.ts`.
 
 ---
 
-## Shared records (identity spine)
+## Shared records
 
-`piis`, `addresses`, `leads_v2` and `app_counters` belong to ko-sales. Vistaar
-writes them **only through ko-sales `POST /leads/upsert`** — the same intake
-every portal uses — and stores the returned `pii_id` / `lead_id` on its own
-documents. `pii_id` (`PII-n`) is the true link to a person; we keep a copy of
-name and phone only for fast search.
+A Vistaar partner is **not a customer**: this service never writes `leads_v2`,
+`contacts_v2`, `customers`, `addresses` or `agents_v2`.
 
-Our record is written first; the ko-sales call second. A failed call never
-fails the partner's request — it is recorded on the partner and retried.
+The one shared write is the person on `piis`: at the first OTP verify,
+`modules/spine/PiiService` finds the PII by phone (oldest first) or inserts a
+new one (`app_counters.piis` `$inc`, retry on collision, never `referral_id`).
+`pii_id` (`PII-n`) is the true link; we keep a copy of the phone and name only
+for fast search. When HO verifies a KYC document whose form field has an
+`org_document`, `PiiService` copies it to `piis.documents.<type>` (ko-sales
+entry shape, `source: 'vistaar'`, dotted `$set` only) — never over another
+portal's entry. Files live private in the org bucket under
+`KO-documents/<pii_id>/`. Partners carry role `USR-1040` (Vistaar Partner; head
+USR-1037) on `vistaar_v2_agents.user_role`. Farmers a partner registers later go through ko-sales
+`POST /leads/upsert`, not through here.
+
+Other apps' collections read here, read-only: `agents_v2` (HO role, owner
+names), `pincode_map_v2`, and `franchises` / `prasar_v2_retailers` /
+`vistaaragents` for the nearby-network warning.
 
 **Exception — `carts`** (owned by B2B Sales): the cart module writes its rows
 there directly, by the user's decision (2026-10-08), always with
@@ -125,6 +135,17 @@ is declared in code; the one it needs is in `docs/PROD-CHECKLIST.md`.
 
 | Domain | Collection | Note |
 |---|---|---|
+| Partners | `vistaar_v2_agents` | Created at OTP send (`otp_verified: false`); `VST-` id + `pii_id` at verify; `stage` drives the HO pipeline; profile mapped at approval. Never deleted |
+| Onboarding | `vistaar_v2_onboarding_data` | `vistar_onboarding_data`: generic fields + `raw_data`, written per key; KYC review per document; optimistic `version` |
+| Forms | `vistaar_v2_onboarding_configs` | Per cohort and version; published versions immutable; one draft per cohort |
+| Cohorts | `vistaar_v2_cohorts` | HO-managed partner types |
+| Sessions | `vistaar_v2_sessions` | SHA-256 of refresh tokens, TTL |
+| Settings | `vistaar_v2_settings` | Default owner, conflict radius |
+| Counters | `vistaar_v2_counters` | `VST-` series (not `app_counters`, not legacy `sequences`) |
+
+Auth: partners use our own HS256 token (`core/auth/partner-token.service.ts`);
+HO routes (`@Can(...)`, `/admin/*`) accept only the company SSO token and check a
+capability from `modules/access/access.domain.ts`.
 | cart | `carts` (shared, `source: 'vistaar'`) | Active cart `_id` derived from `partner_id`. See `docs/DATABASE.md` |
 
 ---
