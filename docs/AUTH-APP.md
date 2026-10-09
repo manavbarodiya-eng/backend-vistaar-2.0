@@ -18,6 +18,14 @@ App         ──GET /me───────────────▶ where 
 
 India (+91) numbers only for now.
 
+> **Login *is* signup.** There is no separate signup screen or API: the first OTP verify of
+> a new number creates the partner (`stage: "signed_up"`, not approved). A verified login
+> therefore does **not** mean "open home". After every verify and on every app start, call
+> `GET /me` and open the screen its `next_action` names (table in §2). Only
+> `next_action: "approved"` goes to home, and ordering is enabled only when
+> `ordering_unlocked` is `true`. A brand-new partner gets `choose_cohort` → partner-type
+> picker → the onboarding form (ONBOARDING-APP.md).
+
 ## 2. Routes
 
 | Method | Path | Auth | Body | Answer |
@@ -64,6 +72,9 @@ On `401` from any route: call `/auth/refresh` once; if that also fails, show the
   "member_since": "2026-10-09T07:20:45.600Z"
 }
 ```
+
+Route on `next_action` — never on the login answer alone (`agent.stage` in the verify answer is
+the same value, usable for the first screen right after login):
 
 | `next_action` | Show |
 |---|---|

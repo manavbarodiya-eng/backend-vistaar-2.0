@@ -9,6 +9,10 @@ partner types is saved with `PATCH /onboarding` after every step (any number of 
 
 ## 1. Flow
 
+Starts right after login whenever `GET /me` says `next_action: "choose_cohort"` (a new
+partner) or `"complete_onboarding"` (resume) — see AUTH-APP.md §1. A partner who has not
+been approved never lands on home.
+
 ```
 GET /onboarding/cohorts                 → partner-type picker
 GET /onboarding/config?cohort=<key>     → steps + fields (cache it; send If-None-Match → 304)
