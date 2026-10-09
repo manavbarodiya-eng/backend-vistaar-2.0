@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, mongo, type QueryFilter, type UpdateQuery } from 'mongoose';
+import {
+  Model,
+  mongo,
+  type QueryFilter,
+  type UpdateQuery,
+  type PipelineStage,
+} from 'mongoose';
 
 import { kmToRadians, type GeoPoint } from '@common/utils/geo.util';
 
@@ -210,24 +216,53 @@ export class AgentRepository {
   }
 
   /** One pass for every tab's count. */
-  async countByStage(): Promise<
-    { stage: Stage; verified: boolean; count: number }[]
-  > {
-    const rows = await this.model
-      .aggregate<{ _id: { stage: Stage; verified: boolean }; count: number }>([
+  /**
+   * The HO summary in one round trip: counts per stage (split by OTP
+   * verified), and the top cohorts and states among verified partners.
+   */
+  async summaryCounts(top: number): Promise<{
+    stages: { stage: Stage; verified: boolean; count: number }[];
+    by_cohort: { key: string; count: number }[];
+    by_state: { key: string; count: number }[];
+  }> {
+    const topBy = (field: string): PipelineStage.FacetPipelineStage[] => [
+      { $match: { otp_verified: true, [field]: { $type: 'string', $ne: '' } } },
+      { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+      { $sort: { count: -1 as const, _id: 1 as const } },
+      { $limit: top },
+      { $project: { _id: 0, key: '$_id', count: 1 } },
+    ];
+    const [row] = await this.model
+      .aggregate<{
+        stages: { _id: { stage: Stage; verified: boolean }; count: number }[];
+        by_cohort: { key: string; count: number }[];
+        by_state: { key: string; count: number }[];
+      }>([
         {
-          $group: {
-            _id: { stage: '$stage', verified: '$otp_verified' },
-            count: { $sum: 1 },
+          $facet: {
+            stages: [
+              {
+                $group: {
+                  _id: { stage: '$stage', verified: '$otp_verified' },
+                  count: { $sum: 1 },
+                },
+              },
+            ],
+            by_cohort: topBy('cohort'),
+            by_state: topBy('preview.state'),
           },
         },
       ])
       .exec();
-    return rows.map((r) => ({
-      stage: r._id.stage,
-      verified: r._id.verified,
-      count: r.count,
-    }));
+    return {
+      stages: (row?.stages ?? []).map((r) => ({
+        stage: r._id.stage,
+        verified: r._id.verified,
+        count: r.count,
+      })),
+      by_cohort: row?.by_cohort ?? [],
+      by_state: row?.by_state ?? [],
+    };
   }
 
   /** Partners with a location inside the radius. `$geoWithin` needs no index. */

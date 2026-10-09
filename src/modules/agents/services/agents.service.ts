@@ -23,6 +23,8 @@ export type {
   AgentListFilter,
 } from '../repositories/agent.repository';
 
+/** How many cohorts / states the HO summary ranks. */
+const SUMMARY_TOP = 10;
 @Injectable()
 export class AgentsService {
   constructor(
@@ -209,8 +211,14 @@ export class AgentsService {
     stages: Record<Stage, number>;
     unverified: number;
     total: number;
+    by_cohort: { key: string; count: number }[];
+    by_state: { key: string; count: number }[];
   }> {
-    const rows = await this.agents.countByStage();
+    const {
+      stages: rows,
+      by_cohort,
+      by_state,
+    } = await this.agents.summaryCounts(SUMMARY_TOP);
     const stages = Object.fromEntries(STAGES.map((s) => [s, 0])) as Record<
       Stage,
       number
@@ -221,7 +229,7 @@ export class AgentsService {
       else stages[row.stage] = (stages[row.stage] ?? 0) + row.count;
     }
     const total = Object.values(stages).reduce((a, b) => a + b, 0);
-    return { stages, unverified, total };
+    return { stages, unverified, total, by_cohort, by_state };
   }
 
   near(

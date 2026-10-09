@@ -31,7 +31,7 @@ partner), `rejected` (reopenable) and `blocked` (from anywhere; unblock returns 
 
 | Method | Path | |
 |---|---|---|
-| GET | `/admin/agents/summary` | `{ stages: { signed_up, onboarding, kyc_review, changes_requested, approved, rejected, blocked }, unverified, total }` |
+| GET | `/admin/agents/summary` | `{ stages: { signed_up, onboarding, kyc_review, changes_requested, approved, rejected, blocked }, unverified, total, by_cohort: [{ key, count }], by_state: [{ key, count }] }` — the top 10 cohorts and states among verified partners |
 | GET | `/admin/agents` | list — query below |
 | GET | `/admin/agents/:agentId` | one partner in full (`agentId` = `VST-000001`) |
 
