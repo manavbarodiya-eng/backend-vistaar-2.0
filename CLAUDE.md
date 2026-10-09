@@ -126,9 +126,11 @@ names), `pincode_map_v2`, and `franchises` / `prasar_v2_retailers` /
 
 **Exception — `carts`** (owned by B2B Sales): the cart module writes its rows
 there directly, by the user's decision (2026-10-08), always with
-`source: 'vistaar'` and always filtering on `source` + `user_id`. Its rows use
-B2B's existing row shape exactly — no Vistaar-only fields (user's decision,
-2026-10-09). No index is declared in code, and none is needed.
+`source: 'vistaar'` and always filtering on `_id` + `source`. Its rows use
+B2B's existing row shape exactly — no Vistaar-only fields and no `user_id`
+(user's decisions, 2026-10-09): `pii_id` is the farmer, or the partner's own
+`pii_id` for shop stock, and the partner is only in the `_id`, derived from
+their `VST-` id. No index is declared in code, and none is needed.
 
 **Exception — `draft_orders`** (shared with the B2B order portal and Sankalp):
 the draft-order module writes its rows there directly, by the user's decision
@@ -152,7 +154,7 @@ upsert.
 | Sessions | `vistaar_v2_sessions` | SHA-256 of refresh tokens, TTL |
 | Settings | `vistaar_v2_settings` | Default owner, conflict radius |
 | Counters | `vistaar_v2_counters` | `VST-` series (not `app_counters`, not legacy `sequences`) |
-| cart | `carts` (shared, `source: 'vistaar'`) | B2B's row shape exactly; partner in `user_id`, customer in `pii_id`, `_id` derived from the partner. See `docs/DATABASE.md` |
+| cart | `carts` (shared, `source: 'vistaar'`) | B2B's row shape exactly, no `user_id`; `pii_id` = farmer (partner's own for shop stock), `_id` derived from the partner. See `docs/DATABASE.md` |
 | draft-order | `draft_orders` (shared, `entry_path: 'vistaar'`) | Existing shape + `reminder_sent`; partner in `agent_id`; id from `app_counters`. See `docs/DATABASE.md` |
 
 Auth: partners use our own HS256 token (`core/auth/partner-token.service.ts`);

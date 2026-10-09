@@ -18,7 +18,11 @@ import {
 } from '@nestjs/swagger';
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
-import { CurrentPartnerId } from '@common/auth/current-partner.decorator';
+import {
+  CurrentPartner,
+  CurrentPartnerId,
+  type PartnerRef,
+} from '@common/auth/current-partner.decorator';
 import { PageResult } from '@common/http/page-result';
 import { CartView } from '@modules/cart/dto/cart-view.dto';
 
@@ -50,10 +54,10 @@ export class DraftOrderController {
   })
   @ApiOkResponse({ type: DraftOrderView })
   save(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
   ): Promise<DraftOrderView> {
-    return this.drafts.save(partnerId, token);
+    return this.drafts.save(partner, token);
   }
 
   @Get()
@@ -83,11 +87,11 @@ export class DraftOrderController {
   })
   @ApiOkResponse({ type: CartView })
   restore(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
     @Param() { id }: DraftOrderParamDto,
   ): Promise<CartView> {
-    return this.drafts.restore(partnerId, token, id);
+    return this.drafts.restore(partner, token, id);
   }
 
   @Post(':id/reminder')

@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
 
+import type { PartnerRef } from '@common/auth/current-partner.decorator';
+
 import type { CatalogVariant } from '@modules/catalog/catalog.domain';
 import type { CatalogService } from '@modules/catalog/services/catalog.service';
 
@@ -11,7 +13,7 @@ import type {
 import type { CartRecord } from '../schemas/cart.schema';
 import { CartService } from './cart.service';
 
-const PARTNER = 'VA-1';
+const PARTNER: PartnerRef = { agent_id: 'VST-000001', pii_id: 'PII-9' };
 const TOKEN = 'agent-token';
 
 function variant(
@@ -42,7 +44,6 @@ function record(
   return {
     _id: new Types.ObjectId(),
     source: 'vistaar',
-    user_id: PARTNER,
     tax: 0,
     discount: 0,
     __v: 0,
@@ -51,7 +52,7 @@ function record(
     items: write.items,
     subtotal: write.subtotal,
     total: write.total,
-    ...(write.pii_id ? { pii_id: write.pii_id } : {}),
+    pii_id: write.pii_id,
     ...overrides,
   };
 }
@@ -143,7 +144,7 @@ describe('CartService', () => {
     });
 
     it('gives up as CART_BUSY after repeated lost races', async () => {
-      active = record({ items: [], subtotal: 0, total: 0, pii_id: null });
+      active = record({ items: [], subtotal: 0, total: 0, pii_id: 'PII-9' });
       repo.updateActive.mockResolvedValue(false);
 
       await expect(
@@ -200,8 +201,13 @@ describe('CartService', () => {
   });
 
   describe('setCustomer', () => {
-    it('stores the customer in pii_id, and leaves it off for own stock', async () => {
-      await service.addItem(PARTNER, TOKEN, { sku: 'K-1', quantity: 1 });
+    it("stores the customer in pii_id, and the partner's own for shop stock", async () => {
+      const first = await service.addItem(PARTNER, TOKEN, {
+        sku: 'K-1',
+        quantity: 1,
+      });
+      expect(first.pii_id).toBeNull();
+      expect(active?.pii_id).toBe('PII-9');
 
       const forCustomer = await service.setCustomer(PARTNER, TOKEN, {
         pii_id: 'PII-1620388',
@@ -213,7 +219,8 @@ describe('CartService', () => {
         pii_id: null,
       });
       expect(ownStock.pii_id).toBeNull();
-      expect(active).not.toHaveProperty('pii_id');
+      expect(active?.pii_id).toBe('PII-9');
+      expect(active).not.toHaveProperty('user_id');
       expect(active?.items).toHaveLength(1);
     });
   });
@@ -226,7 +233,12 @@ describe('CartService', () => {
       const view = await service.clear(PARTNER, TOKEN);
 
       expect(view).toMatchObject({ pii_id: null, items: [], subtotal: 0 });
-      expect(active).toMatchObject({ items: [], subtotal: 0, total: 0 });
+      expect(active).toMatchObject({
+        items: [],
+        subtotal: 0,
+        total: 0,
+        pii_id: 'PII-9',
+      });
     });
   });
 });

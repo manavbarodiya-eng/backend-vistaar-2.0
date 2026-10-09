@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import type { PartnerRef } from '@common/auth/current-partner.decorator';
 import { conflict, notFound } from '@common/errors/api-error';
 import { KeyedSerialQueue } from '@common/utils/keyed-serial-queue';
 import type { CatalogVariant } from '@modules/catalog/catalog.domain';
@@ -40,7 +41,10 @@ const MAX_WRITE_ATTEMPTS = 6;
  */
 const RETRY_JITTER_MS = 15;
 
-type ActiveChange = (current: CartRecord | null) => CartWrite;
+/** A write as a change makes it: `pii_id: null` = the partner's own stock. */
+type PendingWrite = Omit<CartWrite, 'pii_id'> & { pii_id: string | null };
+
+type ActiveChange = (current: CartRecord | null) => PendingWrite;
 
 @Injectable()
 export class CartService {
@@ -52,18 +56,22 @@ export class CartService {
     private readonly catalog: CatalogService,
   ) {}
 
-  async get(partnerId: string, token: string): Promise<CartView> {
-    return this.view(await this.carts.findActive(partnerId), token);
+  async get(partner: PartnerRef, token: string): Promise<CartView> {
+    return this.view(
+      await this.carts.findActive(partner.agent_id),
+      partner,
+      token,
+    );
   }
 
   async addItem(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     dto: AddCartItemDto,
   ): Promise<CartView> {
     const variant = await this.sellable(dto.sku, token);
 
-    return this.mutate(partnerId, token, (current) =>
+    return this.mutate(partner, token, (current) =>
       writeOf(
         applied(addItem(current?.items ?? [], variant, dto.quantity)),
         current?.pii_id,
@@ -72,7 +80,7 @@ export class CartService {
   }
 
   async updateItem(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     sku: string,
     quantity: number,
@@ -80,7 +88,7 @@ export class CartService {
     const variant =
       quantity > 0 ? await this.catalog.variant(sku, token) : null;
 
-    return this.mutate(partnerId, token, (current) =>
+    return this.mutate(partner, token, (current) =>
       writeOf(
         applied(setQuantity(current?.items ?? [], sku, quantity, variant)),
         current?.pii_id,
@@ -88,25 +96,29 @@ export class CartService {
     );
   }
 
-  removeItem(partnerId: string, token: string, sku: string): Promise<CartView> {
-    return this.mutate(partnerId, token, (current) =>
+  removeItem(
+    partner: PartnerRef,
+    token: string,
+    sku: string,
+  ): Promise<CartView> {
+    return this.mutate(partner, token, (current) =>
       writeOf(applied(removeItem(current?.items ?? [], sku)), current?.pii_id),
     );
   }
 
   setCustomer(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     dto: SetCartCustomerDto,
   ): Promise<CartView> {
-    return this.mutate(partnerId, token, (current) =>
+    return this.mutate(partner, token, (current) =>
       writeOf(current?.items ?? [], dto.pii_id),
     );
   }
 
   /** AppContext `clearCart()`: empties the lines and clears the customer. */
-  clear(partnerId: string, token: string): Promise<CartView> {
-    return this.mutate(partnerId, token, () => writeOf([], null));
+  clear(partner: PartnerRef, token: string): Promise<CartView> {
+    return this.mutate(partner, token, () => writeOf([], null));
   }
 
   /**
@@ -115,7 +127,7 @@ export class CartService {
    * sold is left out.
    */
   async replace(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     lines: readonly { sku: string; quantity: number }[],
     piiId: string | null,
@@ -126,7 +138,7 @@ export class CartService {
     );
     const restored = restoreLines(lines, catalog);
 
-    return this.mutate(partnerId, token, () => writeOf(restored, piiId));
+    return this.mutate(partner, token, () => writeOf(restored, piiId));
   }
 
   // ── Internals ─────────────────────────────────────────────────────────
@@ -139,32 +151,37 @@ export class CartService {
    * one document, so carts scale with the partner count.
    */
   private mutate(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     change: ActiveChange,
   ): Promise<CartView> {
-    return this.writes.run(partnerId, () =>
-      this.writeActive(partnerId, token, change),
+    return this.writes.run(partner.agent_id, () =>
+      this.writeActive(partner, token, change),
     );
   }
 
   private async writeActive(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     change: ActiveChange,
   ): Promise<CartView> {
     for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
       if (attempt > 0) await pause(Math.random() * RETRY_JITTER_MS * attempt);
 
-      const current = await this.carts.findActive(partnerId);
+      const current = await this.carts.findActive(partner.agent_id);
       const next = change(current);
+      // Every row names a person, as B2B's do: shop stock is the partner's own.
+      const stored: CartWrite = {
+        ...next,
+        pii_id: next.pii_id ?? partner.pii_id,
+      };
 
       const written = current
-        ? await this.carts.updateActive(partnerId, current.__v, next)
-        : await this.carts.insertActive(partnerId, next);
+        ? await this.carts.updateActive(partner.agent_id, current.__v, stored)
+        : await this.carts.insertActive(partner.agent_id, stored);
 
       if (written) {
-        return this.view({ ...next, updated_at: new Date() }, token);
+        return this.view({ ...stored, updated_at: new Date() }, partner, token);
       }
     }
 
@@ -188,11 +205,14 @@ export class CartService {
           updated_at?: Date;
         })
       | null,
+    partner: PartnerRef,
     token: string,
   ): Promise<CartView> {
+    const piiId = customerOf(cart?.pii_id, partner);
+
     if (!cart || cart.items.length === 0) {
       return {
-        pii_id: cart?.pii_id ?? null,
+        pii_id: piiId,
         items: [],
         item_count: 0,
         subtotal: 0,
@@ -209,7 +229,7 @@ export class CartService {
     const totals = totalsOf(priced);
 
     return {
-      pii_id: cart.pii_id ?? null,
+      pii_id: piiId,
       items: priced.map((l) => ({
         sku: l.sku,
         product_id: l.product_id,
@@ -253,10 +273,18 @@ function applied(change: CartChange): CartLineData[] {
   }
 }
 
+/** The cart's customer for the app: `null` when it is the partner's own stock. */
+function customerOf(
+  piiId: string | null | undefined,
+  partner: PartnerRef,
+): string | null {
+  return piiId && piiId !== partner.pii_id ? piiId : null;
+}
+
 function writeOf(
   lines: CartLineData[],
   piiId: string | null | undefined,
-): CartWrite {
+): PendingWrite {
   const { subtotal } = totalsOf(lines);
 
   return { items: lines, subtotal, total: subtotal, pii_id: piiId ?? null };
