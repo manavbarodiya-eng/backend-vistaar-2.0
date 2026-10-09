@@ -19,7 +19,10 @@ import {
 } from '@nestjs/swagger';
 
 import { B2bToken } from '@common/auth/b2b-token.decorator';
-import { CurrentPartnerId } from '@common/auth/current-partner.decorator';
+import {
+  CurrentPartner,
+  type PartnerRef,
+} from '@common/auth/current-partner.decorator';
 
 import {
   AddCartItemDto,
@@ -46,10 +49,10 @@ export class CartController {
   @ApiOperation({ summary: 'The active cart, priced live' })
   @ApiOkResponse({ type: CartView })
   get(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
   ): Promise<CartView> {
-    return this.cart.get(partnerId, token);
+    return this.cart.get(partner, token);
   }
 
   @Post('items')
@@ -59,11 +62,11 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   addItem(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
     @Body() dto: AddCartItemDto,
   ): Promise<CartView> {
-    return this.cart.addItem(partnerId, token, dto);
+    return this.cart.addItem(partner, token, dto);
   }
 
   @Patch('items/:sku')
@@ -72,23 +75,23 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   updateItem(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
     @Body() dto: UpdateCartItemDto,
   ): Promise<CartView> {
-    return this.cart.updateItem(partnerId, token, sku, dto.quantity);
+    return this.cart.updateItem(partner, token, sku, dto.quantity);
   }
 
   @Delete('items/:sku')
   @ApiOperation({ summary: 'Remove a line' })
   @ApiOkResponse({ type: CartView })
   removeItem(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
     @Param() { sku }: SkuParamDto,
   ): Promise<CartView> {
-    return this.cart.removeItem(partnerId, token, sku);
+    return this.cart.removeItem(partner, token, sku);
   }
 
   @Put('customer')
@@ -97,20 +100,20 @@ export class CartController {
   })
   @ApiOkResponse({ type: CartView })
   setCustomer(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
     @Body() dto: SetCartCustomerDto,
   ): Promise<CartView> {
-    return this.cart.setCustomer(partnerId, token, dto);
+    return this.cart.setCustomer(partner, token, dto);
   }
 
   @Delete()
   @ApiOperation({ summary: 'Empty the cart and clear its customer' })
   @ApiOkResponse({ type: CartView })
   clear(
-    @CurrentPartnerId() partnerId: string,
+    @CurrentPartner() partner: PartnerRef,
     @B2bToken() token: string,
   ): Promise<CartView> {
-    return this.cart.clear(partnerId, token);
+    return this.cart.clear(partner, token);
   }
 }

@@ -30,16 +30,17 @@ Vistaar owns only `vistaar_v2_*`. It never touches `leads_v2`, `contacts_v2`, `c
 
 A Vistaar row is **a B2B cart row** — the same fields, names and types as the
 rows already there (checked 2026-10-09), nothing Vistaar-only. Only the values
-say whose it is. Every query filters on `source` + `user_id`, so neither
-service reads or writes the other's carts. One cart per partner; there are no
-saved / draft carts here.
+say whose it is. There is **no `user_id`**, as on B2B's rows (user's decision,
+2026-10-09): the partner is only in the `_id`. Every query filters on `_id` +
+`source`, so no service reads or writes another's carts. One cart per partner
+(two partners ordering for one farmer have two carts); there are no saved /
+draft carts here — those, and their `reminder_sent`, are `draft_orders`.
 
 | Field | Vistaar value |
 |---|---|
-| `_id` | Derived from the partner id (sha256 → ObjectId), so "one cart per partner" holds on the `_id` index alone |
+| `_id` | Derived from the partner's `VST-` id (sha256 → ObjectId): the only place the partner is, so "one cart per partner" holds on the `_id` index alone and nobody else's id reaches it |
 | `source` | Always `vistaar` |
-| `user_id` | The partner's `VST-` id, from the Vistaar login token |
-| `pii_id` | The customer the cart is for (`PII-n`); **absent** = partner's own stock |
+| `pii_id` | Always set: the farmer the cart is for (`PII-n`), or the **partner's own `pii_id`** (from the login token) for shop stock — the API shows that as `pii_id: null` |
 | `items[]` | B2B's line: `_id`, `product_id` (bulk sku), `sku` (pack), `product_name`, `product_image` (absent if none), `price`, `quantity`, `total`, `gst`, `moq`, `packaging_size` (pack weight as a string, `"0.92"`), `packaging_type` `""`, `uom` (`kg`/`l`/…), `requested_weight` `0`, `item_type` `bulk`, `packaging_sku` `null`, `is_custom_packaging` `false`. At most 100 lines, quantity ≤ 9999 |
 | `subtotal`, `total` | Σ line totals (`total` = `subtotal`) |
 | `tax`, `discount` | `0`, as on B2B's rows |

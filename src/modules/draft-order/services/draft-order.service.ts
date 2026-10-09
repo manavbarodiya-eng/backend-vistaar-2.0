@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import type { PartnerRef } from '@common/auth/current-partner.decorator';
 import {
   conflict,
   notFound,
@@ -50,8 +51,10 @@ export class DraftOrderService {
    * customer — one open draft per customer, so saving again replaces it. The
    * cart itself is left as it is, as on the phone.
    */
-  save(partnerId: string, token: string): Promise<DraftOrderView> {
-    return this.saves.run(partnerId, () => this.writeDraft(partnerId, token));
+  save(partner: PartnerRef, token: string): Promise<DraftOrderView> {
+    return this.saves.run(partner.agent_id, () =>
+      this.writeDraft(partner, token),
+    );
   }
 
   async list(
@@ -76,18 +79,18 @@ export class DraftOrderService {
    * phone, until it is ordered or deleted.
    */
   async restore(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
     id: string,
   ): Promise<CartView> {
-    const draft = await this.found(this.drafts.findOne(partnerId, id));
+    const draft = await this.found(this.drafts.findOne(partner.agent_id, id));
     const piiId = await this.customers.piiIdFor(
       draft.contact_id,
       draft.contact_number,
     );
 
     return this.cart.replace(
-      partnerId,
+      partner,
       token,
       restorableLines(draft.form_data?.products ?? []),
       piiId,
@@ -113,10 +116,11 @@ export class DraftOrderService {
   // ── Internals ─────────────────────────────────────────────────────────
 
   private async writeDraft(
-    partnerId: string,
+    partner: PartnerRef,
     token: string,
   ): Promise<DraftOrderView> {
-    const cart = await this.cart.get(partnerId, token);
+    const partnerId = partner.agent_id;
+    const cart = await this.cart.get(partner, token);
 
     if (cart.items.length === 0) {
       throw conflict(

@@ -5,9 +5,11 @@ import type { Types } from 'mongoose';
  * `carts` is **shared** with the B2B Sales service, and a Vistaar row is a B2B
  * cart row: the same fields, names and types (taken from the rows already in
  * the collection, 2026-10-09) — nothing Vistaar-only. Only the values say
- * whose it is: `source: 'vistaar'`, the partner in `user_id`, the customer in
- * `pii_id`. Every query here filters on `source` + `user_id`, so neither
- * service reads or writes the other's carts.
+ * whose it is: `source: 'vistaar'`, and the person in `pii_id` — the farmer,
+ * or the partner's own `pii_id` for shop stock. There is no `user_id`, as on
+ * B2B's rows (user's decision, 2026-10-09): the partner is in the `_id`,
+ * derived from their id. Every query filters on `_id` + `source`, so no
+ * service reads or writes another's carts.
  *
  * No `index:` / `schema.index()` here on purpose (CLAUDE.md rule 7): this
  * collection is not ours to reindex.
@@ -82,13 +84,9 @@ export class Cart {
   @Prop({ type: String, required: true, default: CART_SOURCE })
   source!: string;
 
-  /** The partner who owns the cart. */
+  /** Who the cart is for (`PII-n`): the farmer, or the partner for shop stock. */
   @Prop({ type: String, required: true })
-  user_id!: string;
-
-  /** Who the cart is for (`PII-n`); absent = the partner's own stock. */
-  @Prop({ type: String })
-  pii_id?: string;
+  pii_id!: string;
 
   @Prop({ type: [CartLineSchema], default: [] })
   items!: CartLine[];

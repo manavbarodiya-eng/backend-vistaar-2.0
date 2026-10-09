@@ -12,12 +12,15 @@ export interface CartWrite {
   items: CartLineData[];
   subtotal: number;
   total: number;
-  /** `null` = own stock: the field is left off, as on B2B's rows. */
-  pii_id: string | null;
+  /** The farmer, or the partner's own `pii_id` for shop stock. */
+  pii_id: string;
 }
 
 /**
- * A partner's cart lives at an `_id` derived from their id.
+ * A partner's cart lives at an `_id` derived from their id. The row itself
+ * names only the person it is for (`pii_id`), as B2B's rows do; the `_id` is
+ * what keeps it the partner's — only their id hashes to it, so two partners
+ * ordering for one farmer still have two carts.
  *
  * "One cart per partner" then rests on the `_id` index, which every
  * collection has, instead of a unique index on a shared collection we may not
@@ -45,15 +48,11 @@ export class CartRepository {
 
   /** `false` when another request created it first — re-read and retry. */
   async insertActive(partnerId: string, data: CartWrite): Promise<boolean> {
-    const { pii_id, ...rest } = data;
-
     try {
       await this.model.create({
         _id: activeCartId(partnerId),
         source: CART_SOURCE,
-        user_id: partnerId,
-        ...(pii_id ? { pii_id } : {}),
-        ...rest,
+        ...data,
       });
       return true;
     } catch (error) {
@@ -70,28 +69,24 @@ export class CartRepository {
     version: number,
     data: CartWrite,
   ): Promise<boolean> {
-    const { pii_id, ...rest } = data;
-
     const result = await this.model
       .updateOne(
         { ...this.activeFilter(partnerId), __v: version },
         {
-          $set: { ...rest, ...(pii_id ? { pii_id } : {}) },
-          ...(pii_id ? {} : { $unset: { pii_id: 1 } }),
+          $set: data,
+          // Rows written before 2026-10-09 still carry it; B2B's never do.
+          $unset: { user_id: 1 },
           $inc: { __v: 1 },
         },
+        { strict: false },
       )
       .exec();
     return result.matchedCount === 1;
   }
 
-  // `user_id` is in every filter, never only `_id`: it keeps a partner to
-  // their own row, and it is the key the collection would be sharded on.
+  // `source` is in every filter beside the `_id`: it keeps Vistaar off B2B's
+  // and the retailer app's rows.
   private activeFilter(partnerId: string) {
-    return {
-      _id: activeCartId(partnerId),
-      source: CART_SOURCE,
-      user_id: partnerId,
-    };
+    return { _id: activeCartId(partnerId), source: CART_SOURCE };
   }
 }

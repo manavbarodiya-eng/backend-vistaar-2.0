@@ -20,3 +20,21 @@ export const CurrentPartnerId = createParamDecorator(
     return user.agent_id;
   },
 );
+
+/** The calling partner as the token names them: their `VST-` id and their own person. */
+export interface PartnerRef {
+  agent_id: string;
+  /** The partner's own `piis` row — what a shop-stock cart is filed under. */
+  pii_id: string;
+}
+
+/** `CurrentPartnerId`, plus the partner's `pii_id`, from the same verified token. */
+export const CurrentPartner = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): PartnerRef => {
+    const user = context.switchToHttp().getRequest<AuthedRequest>().user;
+    if (user?.kind !== 'partner' || !user.agent_id || !user.pii_id) {
+      throw new UnauthorizedException('Sign in again to continue.');
+    }
+    return { agent_id: user.agent_id, pii_id: user.pii_id };
+  },
+);

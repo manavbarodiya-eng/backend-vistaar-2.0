@@ -16,6 +16,7 @@ import type { DraftOrderRecord } from '../schemas/draft-order.schema';
 import { DraftOrderService } from './draft-order.service';
 
 const PARTNER = 'VA-1';
+const OWNER = { agent_id: PARTNER, pii_id: 'PII-9' };
 const TOKEN = 'agent-token';
 
 const CUSTOMER: DraftCustomer = {
@@ -127,7 +128,7 @@ describe('DraftOrderService', () => {
 
   describe('save', () => {
     it('starts a new draft with the next DFT id, customer copied in', async () => {
-      const view = await service.save(PARTNER, TOKEN);
+      const view = await service.save(OWNER, TOKEN);
 
       expect(view).toMatchObject({
         id: 'DFT-96',
@@ -157,7 +158,7 @@ describe('DraftOrderService', () => {
         grand_total: 0,
       });
 
-      const view = await service.save(PARTNER, TOKEN);
+      const view = await service.save(OWNER, TOKEN);
 
       expect(view.id).toBe('DFT-40');
       expect(drafts.nextCount).not.toHaveBeenCalled();
@@ -174,13 +175,13 @@ describe('DraftOrderService', () => {
       });
       drafts.replace.mockResolvedValueOnce(null);
 
-      expect((await service.save(PARTNER, TOKEN)).id).toBe('DFT-96');
+      expect((await service.save(OWNER, TOKEN)).id).toBe('DFT-96');
     });
 
     it('keys own-stock drafts apart from customers', async () => {
       cart = cartView({ pii_id: null });
 
-      await service.save(PARTNER, TOKEN);
+      await service.save(OWNER, TOKEN);
 
       expect(customers.byPiiId).not.toHaveBeenCalled();
       expect(drafts.findOpen).toHaveBeenCalledWith(PARTNER, {
@@ -191,13 +192,13 @@ describe('DraftOrderService', () => {
 
     it('refuses an empty cart', async () => {
       cart = cartView({ items: [] });
-      await expect(service.save(PARTNER, TOKEN)).rejects.toThrow(HttpException);
+      await expect(service.save(OWNER, TOKEN)).rejects.toThrow(HttpException);
       expect(drafts.insert).not.toHaveBeenCalled();
     });
 
     it('fails cleanly when the shared counter row is missing', async () => {
       counter = null;
-      await expect(service.save(PARTNER, TOKEN)).rejects.toMatchObject({
+      await expect(service.save(OWNER, TOKEN)).rejects.toMatchObject({
         status: 503,
       });
       expect(drafts.insert).not.toHaveBeenCalled();
@@ -210,8 +211,8 @@ describe('DraftOrderService', () => {
       });
 
       const [a, b] = await Promise.all([
-        service.save(PARTNER, TOKEN),
-        service.save(PARTNER, TOKEN),
+        service.save(OWNER, TOKEN),
+        service.save(OWNER, TOKEN),
       ]);
 
       expect(a.id).toBe('DFT-96');
@@ -246,11 +247,11 @@ describe('DraftOrderService', () => {
         grand_total: 300,
       });
 
-      await service.restore(PARTNER, TOKEN, 'DFT-40');
+      await service.restore(OWNER, TOKEN, 'DFT-40');
 
       expect(customers.piiIdFor).toHaveBeenCalledWith('C0-1', '8247554977');
       expect(cartService.replace).toHaveBeenCalledWith(
-        PARTNER,
+        OWNER,
         TOKEN,
         [{ sku: 'K-1', quantity: 3 }],
         'PII-1',
@@ -259,7 +260,7 @@ describe('DraftOrderService', () => {
 
     it('is a 404 for a draft that is not open or not ours', async () => {
       await expect(
-        service.restore(PARTNER, TOKEN, 'DFT-1'),
+        service.restore(OWNER, TOKEN, 'DFT-1'),
       ).rejects.toMatchObject({ status: 404 });
       expect(cartService.replace).not.toHaveBeenCalled();
     });
