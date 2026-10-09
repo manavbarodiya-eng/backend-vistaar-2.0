@@ -24,6 +24,7 @@ const NEARBY_LIMIT = 20;
 
 export interface DeskRow {
   agent_id: string | null;
+  pii_id: string | null;
   phone: string;
   name: string | null;
   cohort: string | null;
@@ -35,6 +36,14 @@ export interface DeskRow {
   completion_pct: number;
   submitted_at: Date | null;
   owner: { agent_id: string; name: string } | null;
+  /** From the profile mapped at approval; null before it. */
+  email: string | null;
+  village: string | null;
+  pincode: string | null;
+  sub_cohort: string | null;
+  /** When HO approved or rejected — the approval date for an active agent. */
+  decided_at: Date | null;
+  last_login_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -122,6 +131,7 @@ export class DeskService {
       const owner = a.owner_agent_id ? owners.get(a.owner_agent_id) : undefined;
       return {
         agent_id: a.agent_id,
+        pii_id: a.pii_id,
         phone: a.phone,
         name: a.profile?.name ?? a.preview?.name ?? null,
         cohort: a.cohort,
@@ -135,6 +145,12 @@ export class DeskService {
         owner: a.owner_agent_id
           ? { agent_id: a.owner_agent_id, name: owner?.name ?? '' }
           : null,
+        email: a.profile?.email ?? null,
+        village: a.profile?.village ?? null,
+        pincode: a.profile?.pincode ?? a.preview?.pincode ?? null,
+        sub_cohort: a.profile?.sub_cohort ?? null,
+        decided_at: a.decided_at,
+        last_login_at: a.last_login_at,
         created_at: a.created_at,
         updated_at: a.updated_at,
       };

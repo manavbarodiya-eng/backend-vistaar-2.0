@@ -28,6 +28,7 @@ db.vistaar_v2_agents.createIndex({ agent_id: 1 }, { unique: true, partialFilterE
 db.vistaar_v2_agents.createIndex({ pii_id: 1 }, { unique: true, partialFilterExpression: { pii_id: { $type: 'string' } } })
 db.vistaar_v2_agents.createIndex({ otp_verified: 1, stage: 1, updated_at: -1 })
 db.vistaar_v2_agents.createIndex({ owner_agent_id: 1, stage: 1 })
+db.vistaar_v2_agents.createIndex({ otp_verified: 1, stage: 1, decided_at: -1 })
 db.vistaar_v2_agents.createIndex({ location: '2dsphere' })
 db.vistaar_v2_onboarding_data.createIndex({ agent_ref: 1 }, { unique: true })
 db.vistaar_v2_onboarding_data.createIndex({ location: '2dsphere' })
